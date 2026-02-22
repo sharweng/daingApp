@@ -1,0 +1,132 @@
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --muted: #64748b;
+  --surface: #f1f5f9;
+  --sidebar: #1e3a5f;
+  --sidebar-hover: #2a4a75;
+  --sidebar-active: #3b82f6;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+}
+
+/* Monday.com-style design tokens (work even if Tailwind theme extend not loaded) */
+.bg-sidebar { background-color: var(--sidebar); }
+/* Hover effects disabled */
+/* .hover\:bg-sidebar-hover:hover { background-color: var(--sidebar-hover); } */
+.bg-surface { background-color: var(--surface); }
+.bg-sidebar-active-bg { background-color: rgba(59, 130, 246, 0.2); }
+.border-sidebar-active { border-color: var(--sidebar-active); }
+.text-sidebar-active { color: var(--sidebar-active); }
+.shadow-soft { box-shadow: 0 2px 8px rgba(2, 6, 23, 0.06); }
+.shadow-card { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
+/* Dark blue accent shadow for cards/sections (sidebar color) */
+.shadow-sidebar-subtle { box-shadow: 0 2px 8px rgba(30, 58, 95, 0.12); }
+.shadow-sidebar-md { box-shadow: 0 4px 12px rgba(30, 58, 95, 0.15); }
+.border-sidebar-subtle { border-color: rgba(30, 58, 95, 0.2); }
+
+/* Basic utility to mimic Monday.com-like card style */
+/* Hover effects disabled */
+/* .card {
+  @apply bg-white rounded-xl shadow-md border border-black p-6 transition-all duration-200 hover:shadow-lg hover:shadow-slate-200/50;
+} */
+
+/* Subtle hover: cursor pointer + slight scale + shadow for buttons, images, clickable elements */
+/* Hover effects disabled */
+/* .hover-lift {
+  @apply transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer;
+}
+.hover-shadow-subtle {
+  @apply transition-all duration-200 hover:shadow-lg hover:scale-[1.02] cursor-pointer;
+}
+.hover-scale-subtle {
+  @apply transition-transform duration-200 hover:scale-[1.02] cursor-pointer;
+} */
+/* Buttons and clickable: pointer cursor + subtle enlarge + shadow */
+button:not(:disabled),
+a[href],
+[role="button"],
+input[type="submit"],
+input[type="button"] {
+  @apply cursor-pointer;
+}
+/* Hover effects disabled */
+/* button:not(:disabled):hover,
+a[href]:hover,
+.btn-hover {
+  @apply transition-all duration-200 hover:scale-[1.02] hover:shadow-md;
+} */
+/* Hover effects disabled */
+/* img.hover-zoom {
+  @apply transition-all duration-200 hover:scale-[1.03] hover:shadow-lg cursor-pointer;
+} */
+
+.header-shadow {
+  box-shadow: 0 2px 8px rgba(2,6,23,0.06);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, 4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Hide scrollbar for horizontal carousels */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tremor Chart Enhancement - Strong outline and inner shadow */
+.tremor-AreaChart-svg,
+.tremor-LineChart-svg {
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+}
+
+.tremor-AreaChart-area,
+.tremor-LineChart-line {
+  stroke-width: 3;
+  filter: drop-shadow(0 2px 4px rgba(100, 116, 139, 0.3));
+}
+
+.tremor-AreaChart-area {
+  fill-opacity: 0.3;
+}
+
+/* Chart container enhancement */
+.chart-container {
+  border: 2px solid rgba(203, 213, 225, 0.5);
+  border-radius: 0.75rem;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 1rem;
+}
+
+/* Tremor Card border override - scoped to seller dashboard only */
+.seller-dashboard .tremor-Card-root {
+  border-color: rgb(203 213 225) !important;
+  border-radius: 0.75rem !important;
+}
+
+.seller-dashboard .tremor-Card-root[class*="decoration"]::before {
+  background-color: rgb(148 163 184) !important;
+}
+
+/* Seller dashboard Mantine borders */
+.seller-dashboard .mantine-Paper-root[class*="border"],
+.seller-dashboard .mantine-DatePickerInput-input,
+.seller-dashboard .mantine-Input-input {
+  border-color: rgb(203 213 225) !important;
+}

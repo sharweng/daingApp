@@ -7,3 +7,14 @@ cloudinary
 python-dotenv
 ultralytics
 pymongo
+# Web authentication
+bcrypt
+python-jose[cryptography]
+# Firebase Admin SDK (verify ID tokens)
+firebase-admin
+# Email validation
+email-validator
+# PDF generation for receipts
+reportlab
+# HTTP requests for payment APIs
+requests

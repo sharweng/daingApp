@@ -261,6 +261,32 @@ export const loginUser = async (
   }
 };
 
+export const googleSignIn = async (
+  baseUrl: string,
+  accessToken?: string,
+  idToken?: string,
+): Promise<AuthResponse> => {
+  try {
+    const response = await axios.post<AuthResponse>(
+      `${normalizeUrl(baseUrl)}/auth/google-signin`,
+      {
+        access_token: accessToken,
+        id_token: idToken,
+      },
+      {
+        headers: { "Content-Type": "application/json" },
+        timeout: 10000,
+      },
+    );
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.data?.detail) {
+      return { status: "error", message: error.response.data.detail };
+    }
+    return { status: "error", message: error.message || "Google sign-in failed" };
+  }
+};
+
 export const logoutUser = async (baseUrl: string): Promise<AuthResponse> => {
   try {
     const response = await axios.post<AuthResponse>(

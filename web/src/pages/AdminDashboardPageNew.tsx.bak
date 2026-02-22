@@ -1,0 +1,787 @@
+/**
+ * Admin Dashboard — New multi-section analytics page.
+ * 5 inner tabs: Users, Scans, Market, Community, Activities
+ * Each tab: KPIs → Area Chart → Progress bars + small chart → Table
+ * Uses Mantine + Tremor + Tailwind. Sample data for now.
+ */
+import React, { useState, useMemo } from 'react'
+import {
+  Users, ScanLine, ShoppingBag, MessageCircle, Activity,
+  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
+  Filter, Download, ChevronLeft, ChevronRight, Search,
+} from 'lucide-react'
+import { AreaChart } from '@tremor/react'
+import {
+  Paper, Text, Badge, TextInput, ActionIcon, Group, ScrollArea, Select,
+} from '@mantine/core'
+import AdminReportPanel from '../components/admin/AdminReportPanel'
+
+// ─────────────────────────────────────── Types ───
+type SectionKey = 'users' | 'scans' | 'market' | 'community' | 'activities'
+
+interface KpiItem {
+  label: string
+  value: string
+  change: number          // percentage change
+  subtitle: string
+  icon: React.ElementType
+  iconBg: string
+  iconColor: string
+}
+
+interface ChartPoint { period: string; value: number }
+
+interface ProgressItem {
+  label: string
+  value: number
+  max: number
+  description: string
+}
+
+interface DonutSlice { label: string; value: number; color: string }
+
+interface TableRow {
+  id: string
+  cols: string[]
+}
+
+interface SectionData {
+  kpis: KpiItem[]
+  chartTitle: string
+  chartData: ChartPoint[]
+  chartColor: string
+  progressA: { title: string; subtitle: string; items: ProgressItem[] }
+  progressB: { title: string; subtitle: string; items: ProgressItem[] }
+  donut: { title: string; slices: DonutSlice[] }
+  table: {
+    headers: string[]
+    rows: TableRow[]
+  }
+}
+
+// ────────────────────────────────── Sample Data ──
+
+const SECTIONS: { key: SectionKey; label: string; icon: React.ElementType }[] = [
+  { key: 'users', label: 'Users', icon: Users },
+  { key: 'scans', label: 'Scans', icon: ScanLine },
+  { key: 'market', label: 'Market', icon: ShoppingBag },
+  { key: 'community', label: 'Community', icon: MessageCircle },
+  { key: 'activities', label: 'Activities', icon: Activity },
+]
+
+function buildSampleData(): Record<SectionKey, SectionData> {
+  return {
+    // ─── Users ──────────────────────────────────────────────
+    users: {
+      kpis: [
+        { label: 'Total Users', value: '12,847', change: 12.5, subtitle: 'All registered accounts', icon: Users, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+        { label: 'Active Users', value: '8,234', change: 8.2, subtitle: 'Active last 30 days', icon: Activity, iconBg: 'bg-green-100', iconColor: 'text-green-600' },
+        { label: 'New Signups', value: '1,456', change: -3.1, subtitle: 'This month', icon: TrendingUp, iconBg: 'bg-violet-100', iconColor: 'text-violet-600' },
+        { label: 'Sellers', value: '342', change: 15.7, subtitle: 'Verified seller accounts', icon: ShoppingBag, iconBg: 'bg-orange-100', iconColor: 'text-orange-600' },
+      ],
+      chartTitle: 'User Growth',
+      chartData: [
+        { period: 'Jan', value: 9200 }, { period: 'Feb', value: 9800 }, { period: 'Mar', value: 10400 },
+        { period: 'Apr', value: 10900 }, { period: 'May', value: 11300 }, { period: 'Jun', value: 11800 },
+        { period: 'Jul', value: 12100 }, { period: 'Aug', value: 12400 }, { period: 'Sep', value: 12650 },
+        { period: 'Oct', value: 12700 }, { period: 'Nov', value: 12780 }, { period: 'Dec', value: 12847 },
+      ],
+      chartColor: 'blue',
+      progressA: {
+        title: 'User Segmentation',
+        subtitle: 'Breakdown by role and status',
+        items: [
+          { label: 'Regular Users', value: 10543, max: 12847, description: 'Standard user accounts' },
+          { label: 'Sellers', value: 342, max: 12847, description: 'Active marketplace sellers' },
+          { label: 'Admins', value: 12, max: 12847, description: 'Platform administrators' },
+        ],
+      },
+      progressB: {
+        title: 'Engagement Metrics',
+        subtitle: 'User activity breakdown',
+        items: [
+          { label: 'Daily Active', value: 3452, max: 12847, description: 'Users active today' },
+          { label: 'Weekly Active', value: 6234, max: 12847, description: 'Users active this week' },
+          { label: 'Monthly Active', value: 8234, max: 12847, description: 'Users active this month' },
+        ],
+      },
+      donut: {
+        title: 'User Regions',
+        slices: [
+          { label: 'Luzon', value: 58, color: '#3b82f6' },
+          { label: 'Visayas', value: 25, color: '#6366f1' },
+          { label: 'Mindanao', value: 17, color: '#8b5cf6' },
+        ],
+      },
+      table: {
+        headers: ['User ID', 'Name', 'Email', 'Role', 'Status', 'Joined'],
+        rows: [
+          { id: '1', cols: ['USR-001', 'Juan dela Cruz', 'juan@email.com', 'User', 'Active', 'Jan 15, 2026'] },
+          { id: '2', cols: ['USR-002', 'Maria Santos', 'maria@email.com', 'Seller', 'Active', 'Jan 18, 2026'] },
+          { id: '3', cols: ['USR-003', 'Pedro Reyes', 'pedro@email.com', 'User', 'Inactive', 'Jan 20, 2026'] },
+          { id: '4', cols: ['USR-004', 'Ana Garcia', 'ana@email.com', 'User', 'Active', 'Jan 22, 2026'] },
+          { id: '5', cols: ['USR-005', 'Jose Rizal', 'jose@email.com', 'Admin', 'Active', 'Feb 01, 2026'] },
+          { id: '6', cols: ['USR-006', 'Liza Soberano', 'liza@email.com', 'User', 'Active', 'Feb 02, 2026'] },
+          { id: '7', cols: ['USR-007', 'Mark Bautista', 'mark@email.com', 'Seller', 'Active', 'Feb 04, 2026'] },
+          { id: '8', cols: ['USR-008', 'Sarah Chen', 'sarah@email.com', 'User', 'Active', 'Feb 06, 2026'] },
+          { id: '9', cols: ['USR-009', 'Rico Blanco', 'rico@email.com', 'User', 'Inactive', 'Feb 08, 2026'] },
+          { id: '10', cols: ['USR-010', 'Kim Chiu', 'kim@email.com', 'Seller', 'Active', 'Feb 10, 2026'] },
+        ],
+      },
+    },
+
+    // ─── Scans ──────────────────────────────────────────────
+    scans: {
+      kpis: [
+        { label: 'Total Scans', value: '45,832', change: 22.3, subtitle: 'All-time scan count', icon: ScanLine, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
+        { label: 'Scans Today', value: '287', change: 5.4, subtitle: 'Since midnight', icon: Activity, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+        { label: 'Avg per Day', value: '156', change: -1.2, subtitle: 'Last 30 days average', icon: TrendingUp, iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
+        { label: 'Unique Users', value: '3,891', change: 10.8, subtitle: 'Distinct scanners', icon: Users, iconBg: 'bg-rose-100', iconColor: 'text-rose-600' },
+      ],
+      chartTitle: 'Scan Activity',
+      chartData: [
+        { period: 'Jan', value: 3200 }, { period: 'Feb', value: 3650 }, { period: 'Mar', value: 4100 },
+        { period: 'Apr', value: 3800 }, { period: 'May', value: 4300 }, { period: 'Jun', value: 4700 },
+        { period: 'Jul', value: 3900 }, { period: 'Aug', value: 4200 }, { period: 'Sep', value: 3500 },
+        { period: 'Oct', value: 3800 }, { period: 'Nov', value: 4400 }, { period: 'Dec', value: 4832 },
+      ],
+      chartColor: 'green',
+      progressA: {
+        title: 'Scan Results',
+        subtitle: 'Classification breakdown',
+        items: [
+          { label: 'Grade A (Premium)', value: 18332, max: 45832, description: 'Highest quality scans' },
+          { label: 'Grade B (Standard)', value: 15845, max: 45832, description: 'Standard quality scans' },
+          { label: 'Grade C (Below Avg)', value: 11655, max: 45832, description: 'Below average quality' },
+        ],
+      },
+      progressB: {
+        title: 'Scan Sources',
+        subtitle: 'Where scans originate',
+        items: [
+          { label: 'Mobile App', value: 32083, max: 45832, description: 'From DaingApp mobile' },
+          { label: 'Web Upload', value: 9166, max: 45832, description: 'Via web interface' },
+          { label: 'API Calls', value: 4583, max: 45832, description: 'External API integrations' },
+        ],
+      },
+      donut: {
+        title: 'Scan Types',
+        slices: [
+          { label: 'Daing', value: 62, color: '#10b981' },
+          { label: 'Tuyo', value: 23, color: '#14b8a6' },
+          { label: 'Other', value: 15, color: '#6ee7b7' },
+        ],
+      },
+      table: {
+        headers: ['Scan ID', 'User', 'Result', 'Grade', 'Confidence', 'Date'],
+        rows: [
+          { id: '1', cols: ['SCN-4832', 'Juan dela Cruz', 'Galunggong', 'A', '96.3%', 'Feb 18, 2026'] },
+          { id: '2', cols: ['SCN-4831', 'Maria Santos', 'Bangus', 'B', '88.1%', 'Feb 18, 2026'] },
+          { id: '3', cols: ['SCN-4830', 'Pedro Reyes', 'Tilapia', 'A', '94.7%', 'Feb 17, 2026'] },
+          { id: '4', cols: ['SCN-4829', 'Ana Garcia', 'Daing', 'A', '97.2%', 'Feb 17, 2026'] },
+          { id: '5', cols: ['SCN-4828', 'Jose Rizal', 'Tuyo', 'B', '85.4%', 'Feb 17, 2026'] },
+          { id: '6', cols: ['SCN-4827', 'Liza Soberano', 'Daing', 'C', '72.1%', 'Feb 16, 2026'] },
+          { id: '7', cols: ['SCN-4826', 'Mark Bautista', 'Bangus', 'A', '93.8%', 'Feb 16, 2026'] },
+          { id: '8', cols: ['SCN-4825', 'Sarah Chen', 'Galunggong', 'B', '86.5%', 'Feb 15, 2026'] },
+          { id: '9', cols: ['SCN-4824', 'Rico Blanco', 'Tilapia', 'A', '95.2%', 'Feb 15, 2026'] },
+          { id: '10', cols: ['SCN-4823', 'Kim Chiu', 'Daing', 'B', '89.3%', 'Feb 14, 2026'] },
+        ],
+      },
+    },
+
+    // ─── Market ──────────────────────────────────────────────
+    market: {
+      kpis: [
+        { label: 'Total Revenue', value: '₱2,456,780', change: 18.4, subtitle: 'All-time platform revenue', icon: TrendingUp, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600' },
+        { label: 'Total Orders', value: '8,934', change: 14.2, subtitle: 'Completed orders', icon: ShoppingBag, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+        { label: 'Active Listings', value: '1,247', change: 6.8, subtitle: 'Products available', icon: Activity, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
+        { label: 'Avg Order Value', value: '₱275', change: -2.3, subtitle: 'Per transaction', icon: TrendingDown, iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
+      ],
+      chartTitle: 'Revenue Trend',
+      chartData: [
+        { period: 'Jan', value: 180000 }, { period: 'Feb', value: 195000 }, { period: 'Mar', value: 210000 },
+        { period: 'Apr', value: 198000 }, { period: 'May', value: 225000 }, { period: 'Jun', value: 240000 },
+        { period: 'Jul', value: 215000 }, { period: 'Aug', value: 230000 }, { period: 'Sep', value: 200000 },
+        { period: 'Oct', value: 218000 }, { period: 'Nov', value: 235000 }, { period: 'Dec', value: 256780 },
+      ],
+      chartColor: 'indigo',
+      progressA: {
+        title: 'Order Status',
+        subtitle: 'Current order distribution',
+        items: [
+          { label: 'Completed', value: 7143, max: 8934, description: 'Successfully delivered' },
+          { label: 'Pending', value: 1234, max: 8934, description: 'Awaiting processing' },
+          { label: 'Cancelled', value: 557, max: 8934, description: 'Cancelled orders' },
+        ],
+      },
+      progressB: {
+        title: 'Seller Performance',
+        subtitle: 'Top seller metrics',
+        items: [
+          { label: 'Top 10 Sellers Revenue', value: 1478068, max: 2456780, description: '60.2% of total' },
+          { label: 'Avg Rating (Top 10)', value: 47, max: 50, description: '4.7 / 5.0 average' },
+          { label: 'Repeat Customers', value: 4023, max: 8934, description: '45% return rate' },
+        ],
+      },
+      donut: {
+        title: 'Sales by Category',
+        slices: [
+          { label: 'Dried Fish', value: 45, color: '#6366f1' },
+          { label: 'Fresh Fish', value: 30, color: '#818cf8' },
+          { label: 'Processed', value: 15, color: '#a5b4fc' },
+          { label: 'Other', value: 10, color: '#c7d2fe' },
+        ],
+      },
+      table: {
+        headers: ['Order ID', 'Customer', 'Seller', 'Amount', 'Status', 'Date'],
+        rows: [
+          { id: '1', cols: ['ORD-8934', 'Juan dela Cruz', 'Fish Market PH', '₱1,250.00', 'Completed', 'Feb 18, 2026'] },
+          { id: '2', cols: ['ORD-8933', 'Maria Santos', 'Sea Fresh Co.', '₱890.50', 'Pending', 'Feb 18, 2026'] },
+          { id: '3', cols: ['ORD-8932', 'Pedro Reyes', 'Daing Express', '₱450.00', 'Completed', 'Feb 17, 2026'] },
+          { id: '4', cols: ['ORD-8931', 'Ana Garcia', 'Ocean Goods', '₱1,780.00', 'Completed', 'Feb 17, 2026'] },
+          { id: '5', cols: ['ORD-8930', 'Jose Rizal', 'Fish Market PH', '₱320.00', 'Cancelled', 'Feb 16, 2026'] },
+          { id: '6', cols: ['ORD-8929', 'Liza Soberano', 'Sea Fresh Co.', '₱675.00', 'Completed', 'Feb 16, 2026'] },
+          { id: '7', cols: ['ORD-8928', 'Mark Bautista', 'Daing Express', '₱1,100.00', 'Pending', 'Feb 15, 2026'] },
+          { id: '8', cols: ['ORD-8927', 'Sarah Chen', 'Ocean Goods', '₱540.00', 'Completed', 'Feb 15, 2026'] },
+          { id: '9', cols: ['ORD-8926', 'Rico Blanco', 'Fish Market PH', '₱920.00', 'Completed', 'Feb 14, 2026'] },
+          { id: '10', cols: ['ORD-8925', 'Kim Chiu', 'Sea Fresh Co.', '₱1,350.00', 'Completed', 'Feb 14, 2026'] },
+        ],
+      },
+    },
+
+    // ─── Community ───────────────────────────────────────────
+    community: {
+      kpis: [
+        { label: 'Total Posts', value: '4,567', change: 9.1, subtitle: 'Forum posts & articles', icon: MessageCircle, iconBg: 'bg-rose-100', iconColor: 'text-rose-600' },
+        { label: 'Total Comments', value: '18,234', change: 15.3, subtitle: 'User discussions', icon: MessageCircle, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+        { label: 'Active Threads', value: '892', change: 4.7, subtitle: 'Ongoing conversations', icon: Activity, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
+        { label: 'Reports', value: '23', change: -45.2, subtitle: 'Pending moderation', icon: TrendingDown, iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
+      ],
+      chartTitle: 'Community Engagement',
+      chartData: [
+        { period: 'Jan', value: 2800 }, { period: 'Feb', value: 3100 }, { period: 'Mar', value: 3500 },
+        { period: 'Apr', value: 3200 }, { period: 'May', value: 3700 }, { period: 'Jun', value: 4000 },
+        { period: 'Jul', value: 3600 }, { period: 'Aug', value: 3900 }, { period: 'Sep', value: 3400 },
+        { period: 'Oct', value: 3800 }, { period: 'Nov', value: 4200 }, { period: 'Dec', value: 4567 },
+      ],
+      chartColor: 'rose',
+      progressA: {
+        title: 'Content Breakdown',
+        subtitle: 'Post types distribution',
+        items: [
+          { label: 'Discussions', value: 2284, max: 4567, description: 'General community discussions' },
+          { label: 'Questions', value: 1370, max: 4567, description: 'Help & support questions' },
+          { label: 'Articles', value: 913, max: 4567, description: 'Long-form content' },
+        ],
+      },
+      progressB: {
+        title: 'Moderation Stats',
+        subtitle: 'Content review status',
+        items: [
+          { label: 'Approved', value: 4450, max: 4567, description: 'Approved content' },
+          { label: 'Flagged', value: 94, max: 4567, description: 'Under review' },
+          { label: 'Removed', value: 23, max: 4567, description: 'Removed by moderators' },
+        ],
+      },
+      donut: {
+        title: 'Engagement Type',
+        slices: [
+          { label: 'Likes', value: 55, color: '#f43f5e' },
+          { label: 'Comments', value: 30, color: '#fb7185' },
+          { label: 'Shares', value: 15, color: '#fda4af' },
+        ],
+      },
+      table: {
+        headers: ['Post ID', 'Title', 'Author', 'Likes', 'Comments', 'Created'],
+        rows: [
+          { id: '1', cols: ['PST-4567', 'Best dried fish techniques', 'Juan dela Cruz', '234', '45', 'Feb 18, 2026'] },
+          { id: '2', cols: ['PST-4566', 'How to grade daing properly', 'Maria Santos', '189', '32', 'Feb 17, 2026'] },
+          { id: '3', cols: ['PST-4565', 'Market price trends 2026', 'Pedro Reyes', '156', '28', 'Feb 17, 2026'] },
+          { id: '4', cols: ['PST-4564', 'New seller tips & tricks', 'Ana Garcia', '143', '19', 'Feb 16, 2026'] },
+          { id: '5', cols: ['PST-4563', 'Quality control standards', 'Jose Rizal', '121', '15', 'Feb 16, 2026'] },
+          { id: '6', cols: ['PST-4562', 'Packaging best practices', 'Liza Soberano', '98', '12', 'Feb 15, 2026'] },
+          { id: '7', cols: ['PST-4561', 'Sustainable fishing methods', 'Mark Bautista', '87', '21', 'Feb 15, 2026'] },
+          { id: '8', cols: ['PST-4560', 'Customer service excellence', 'Sarah Chen', '76', '9', 'Feb 14, 2026'] },
+          { id: '9', cols: ['PST-4559', 'Regional delicacies guide', 'Rico Blanco', '65', '14', 'Feb 14, 2026'] },
+          { id: '10', cols: ['PST-4558', 'Fish preservation methods', 'Kim Chiu', '54', '8', 'Feb 13, 2026'] },
+        ],
+      },
+    },
+
+    // ─── Activities ──────────────────────────────────────────
+    activities: {
+      kpis: [
+        { label: 'Total Events', value: '142,567', change: 11.3, subtitle: 'All tracked events', icon: Activity, iconBg: 'bg-cyan-100', iconColor: 'text-cyan-600' },
+        { label: 'Today', value: '3,456', change: 7.8, subtitle: 'Events logged today', icon: Activity, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+        { label: 'Error Rate', value: '0.12%', change: -28.5, subtitle: 'System errors', icon: TrendingDown, iconBg: 'bg-green-100', iconColor: 'text-green-600' },
+        { label: 'Avg Response', value: '142ms', change: -5.2, subtitle: 'API response time', icon: Activity, iconBg: 'bg-violet-100', iconColor: 'text-violet-600' },
+      ],
+      chartTitle: 'Platform Activity',
+      chartData: [
+        { period: 'Jan', value: 10200 }, { period: 'Feb', value: 11500 }, { period: 'Mar', value: 12800 },
+        { period: 'Apr', value: 11900 }, { period: 'May', value: 13200 }, { period: 'Jun', value: 14500 },
+        { period: 'Jul', value: 12300 }, { period: 'Aug', value: 13800 }, { period: 'Sep', value: 11200 },
+        { period: 'Oct', value: 12700 }, { period: 'Nov', value: 14100 }, { period: 'Dec', value: 14567 },
+      ],
+      chartColor: 'cyan',
+      progressA: {
+        title: 'Event Categories',
+        subtitle: 'Activity type breakdown',
+        items: [
+          { label: 'Page Views', value: 85534, max: 142567, description: 'Navigation events' },
+          { label: 'API Calls', value: 42770, max: 142567, description: 'Backend requests' },
+          { label: 'User Actions', value: 14263, max: 142567, description: 'Clicks, forms, uploads' },
+        ],
+      },
+      progressB: {
+        title: 'System Health',
+        subtitle: 'Infrastructure metrics',
+        items: [
+          { label: 'Uptime', value: 9997, max: 10000, description: '99.97% availability' },
+          { label: 'Success Rate', value: 9988, max: 10000, description: '99.88% requests OK' },
+          { label: 'Cache Hit', value: 8500, max: 10000, description: '85% cache efficiency' },
+        ],
+      },
+      donut: {
+        title: 'Traffic Source',
+        slices: [
+          { label: 'Mobile', value: 52, color: '#06b6d4' },
+          { label: 'Desktop', value: 35, color: '#67e8f9' },
+          { label: 'Tablet', value: 13, color: '#a5f3fc' },
+        ],
+      },
+      table: {
+        headers: ['Event ID', 'Type', 'User', 'Action', 'Status', 'Timestamp'],
+        rows: [
+          { id: '1', cols: ['EVT-142567', 'API', 'System', 'GET /api/products', 'Success', '2026-02-18 14:32:15'] },
+          { id: '2', cols: ['EVT-142566', 'Auth', 'Juan dela Cruz', 'Login', 'Success', '2026-02-18 14:30:42'] },
+          { id: '3', cols: ['EVT-142565', 'Scan', 'Maria Santos', 'Image Upload', 'Success', '2026-02-18 14:28:19'] },
+          { id: '4', cols: ['EVT-142564', 'Order', 'Pedro Reyes', 'Checkout', 'Success', '2026-02-18 14:25:03'] },
+          { id: '5', cols: ['EVT-142563', 'API', 'System', 'POST /api/scan', 'Error', '2026-02-18 14:22:45'] },
+          { id: '6', cols: ['EVT-142562', 'Auth', 'Ana Garcia', 'Password Reset', 'Success', '2026-02-18 14:20:11'] },
+          { id: '7', cols: ['EVT-142561', 'Order', 'Jose Rizal', 'Payment', 'Success', '2026-02-18 14:18:30'] },
+          { id: '8', cols: ['EVT-142560', 'API', 'System', 'GET /api/users', 'Success', '2026-02-18 14:15:22'] },
+          { id: '9', cols: ['EVT-142559', 'Scan', 'Liza Soberano', 'Result View', 'Success', '2026-02-18 14:12:08'] },
+          { id: '10', cols: ['EVT-142558', 'Auth', 'Mark Bautista', 'Signup', 'Success', '2026-02-18 14:10:55'] },
+        ],
+      },
+    },
+  }
+}
+
+// ────────────────────────────── SVG Mini Donut ───
+function MiniDonut({ slices }: { slices: DonutSlice[] }) {
+  const total = slices.reduce((s, d) => s + d.value, 0)
+  const r = 40, cx = 50, cy = 50, sw = 12
+  let cumulative = 0
+
+  if (slices.length === 0) {
+    return (
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={sw} />
+      </svg>
+    )
+  }
+
+  if (slices.length === 1) {
+    return (
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={slices[0].color} strokeWidth={sw} />
+      </svg>
+    )
+  }
+
+  const circumference = 2 * Math.PI * r
+
+  return (
+    <svg viewBox="0 0 100 100" className="w-full h-full">
+      {slices.map((slice, i) => {
+        const pct = slice.value / total
+        const dashLen = circumference * pct
+        const dashGap = circumference - dashLen
+        const rotation = (cumulative / total) * 360 - 90
+        cumulative += slice.value
+        return (
+          <circle
+            key={i}
+            cx={cx} cy={cy} r={r}
+            fill="none"
+            stroke={slice.color}
+            strokeWidth={sw}
+            strokeDasharray={`${dashLen} ${dashGap}`}
+            transform={`rotate(${rotation} ${cx} ${cy})`}
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
+// ──────────────────────────────── Main Component ─
+export default function AdminDashboardPageNew() {
+  const [activeSection, setActiveSection] = useState<SectionKey>('users')
+  const [tableSearch, setTableSearch] = useState('')
+  const [tablePage, setTablePage] = useState(1)
+  const [reportPanelOpen, setReportPanelOpen] = useState(false)
+  const pageSize = 10
+
+  const allData = useMemo(() => buildSampleData(), [])
+  const data = allData[activeSection]
+
+  // Filtered table rows
+  const filteredRows = useMemo(() => {
+    if (!tableSearch.trim()) return data.table.rows
+    const q = tableSearch.toLowerCase()
+    return data.table.rows.filter(row => row.cols.some(c => c.toLowerCase().includes(q)))
+  }, [data.table.rows, tableSearch])
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize))
+  const paginatedRows = filteredRows.slice((tablePage - 1) * pageSize, tablePage * pageSize)
+
+  // Reset page when switching sections or searching
+  const handleSectionChange = (key: SectionKey) => {
+    setActiveSection(key)
+    setTableSearch('')
+    setTablePage(1)
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
+      <div className="px-6 py-8 max-w-[1400px] mx-auto">
+
+        {/* Breadcrumb */}
+        <div className="text-sm text-slate-500 mb-3">
+          <span>Pages</span>
+          <span className="mx-2">/</span>
+          <span className="text-slate-700 font-medium">Admin Dashboard</span>
+        </div>
+
+        {/* ─── Header Row ─────────────────────────────────── */}
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900">Admin Dashboard</h1>
+            <p className="text-slate-600 mt-2">Platform analytics, monitoring, and management</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+            {/* Filter button placeholder */}
+            <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-all shadow-sm">
+              <Filter className="w-4 h-4" />
+              Filter
+            </button>
+            {/* Download Report */}
+            <div className="relative">
+              <button
+                onClick={() => setReportPanelOpen(v => !v)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-95 shadow-md"
+                style={{ background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)' }}
+              >
+                <Download className="w-4 h-4" />
+                Download Report
+              </button>
+              <AdminReportPanel
+                open={reportPanelOpen}
+                onClose={() => setReportPanelOpen(false)}
+                section={activeSection}
+                sectionLabel={SECTIONS.find(s => s.key === activeSection)?.label ?? ''}
+                data={data}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Section Tabs ───────────────────────────────── */}
+        <div className="mb-6">
+          <div className="flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-sm w-fit">
+            {SECTIONS.map(sec => {
+              const Icon = sec.icon
+              const isActive = activeSection === sec.key
+              return (
+                <button
+                  key={sec.key}
+                  onClick={() => handleSectionChange(sec.key)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {sec.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+
+          {/* ─── ROW 1: 4 KPIs ──────────────────────────────── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {data.kpis.map((kpi, i) => {
+              const Icon = kpi.icon
+              const positive = kpi.change >= 0
+              return (
+                <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{kpi.label}</p>
+                      <p className="text-2xl font-bold text-slate-900 mt-2">{kpi.value}</p>
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <span className={`inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded ${
+                          positive ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+                        }`}>
+                          {positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          {Math.abs(kpi.change)}%
+                        </span>
+                        <span className="text-[10px] text-slate-500">{kpi.subtitle}</span>
+                      </div>
+                    </div>
+                    <div className={`p-2.5 rounded-xl ${kpi.iconBg}`}>
+                      <Icon className={`w-5 h-5 ${kpi.iconColor}`} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* ─── ROW 2: Full-width Area Chart ───────────────── */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="font-bold text-lg text-slate-900">{data.chartTitle}</p>
+                <p className="text-xs text-slate-500 mt-0.5">Monthly trend over the past year</p>
+              </div>
+              <Badge variant="light" color="blue" size="sm">Last 12 months</Badge>
+            </div>
+            <AreaChart
+              className="h-64"
+              data={data.chartData}
+              index="period"
+              categories={['value']}
+              colors={[data.chartColor]}
+              curveType="linear"
+              showAnimation
+              showLegend={false}
+              showGridLines={true}
+              valueFormatter={(v: number) => v.toLocaleString()}
+            />
+          </div>
+
+          {/* ─── ROW 3: 2 Progress Sections + Donut Chart ──── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+            {/* Progress Section A */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <p className="font-bold text-base text-slate-900 mb-0.5">{data.progressA.title}</p>
+              <p className="text-xs text-slate-500 mb-5 italic">{data.progressA.subtitle}</p>
+              <div className="space-y-5">
+                {data.progressA.items.map((item, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-900">{item.label}</span>
+                      <span className="text-xs font-semibold text-slate-700">{item.value.toLocaleString()}</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-blue-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, (item.value / item.max) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 italic mt-1">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Progress Section B */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <p className="font-bold text-base text-slate-900 mb-0.5">{data.progressB.title}</p>
+              <p className="text-xs text-slate-500 mb-5 italic">{data.progressB.subtitle}</p>
+              <div className="space-y-5">
+                {data.progressB.items.map((item, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-900">{item.label}</span>
+                      <span className="text-xs font-semibold text-slate-700">{item.value.toLocaleString()}</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-blue-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, (item.value / item.max) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 italic mt-1">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Donut Chart */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <p className="font-bold text-base text-slate-900 mb-0.5">{data.donut.title}</p>
+              <p className="text-xs text-slate-500 mb-4 italic">Distribution breakdown</p>
+              <div className="flex items-center gap-4">
+                <div className="w-28 h-28 flex-shrink-0">
+                  <MiniDonut slices={data.donut.slices} />
+                </div>
+                <div className="space-y-2 flex-1">
+                  {data.donut.slices.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                      <span className="text-xs text-slate-700 flex-1">{s.label}</span>
+                      <span className="text-xs font-semibold text-slate-900">{s.value}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ─── ROW 4: Data Table ──────────────────────────── */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            {/* Table Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-base text-slate-900">
+                  {SECTIONS.find(s => s.key === activeSection)?.label} Data
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Showing {paginatedRows.length} of {filteredRows.length} entries
+                </p>
+              </div>
+              <TextInput
+                placeholder="Search..."
+                size="xs"
+                radius="md"
+                value={tableSearch}
+                onChange={e => { setTableSearch(e.currentTarget.value); setTablePage(1) }}
+                leftSection={<Search className="w-3.5 h-3.5 text-slate-400" />}
+                className="w-64"
+              />
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    {data.table.headers.map((h, i) => (
+                      <th key={i} className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={data.table.headers.length} className="text-center py-8 text-slate-400 text-sm">
+                        No records found
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedRows.map((row, ri) => (
+                      <tr key={row.id} className="border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
+                        {row.cols.map((cell, ci) => (
+                          <td key={ci} className={`px-4 py-3 ${
+                            ci === 0 ? 'font-mono text-xs text-slate-600' :
+                            ci === row.cols.length - 1 ? 'text-xs text-slate-500' :
+                            'text-sm text-slate-800'
+                          }`}>
+                            {/* Status badges */}
+                            {(data.table.headers[ci] === 'Status' || data.table.headers[ci] === 'Grade') ? (
+                              <Badge
+                                size="sm"
+                                variant="light"
+                                color={
+                                  cell === 'Active' || cell === 'Completed' || cell === 'Success' || cell === 'A' ? 'green' :
+                                  cell === 'Pending' || cell === 'B' ? 'yellow' :
+                                  cell === 'Cancelled' || cell === 'Error' || cell === 'C' ? 'red' :
+                                  cell === 'Inactive' ? 'gray' : 'blue'
+                                }
+                              >
+                                {cell}
+                              </Badge>
+                            ) : (
+                              cell
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                Page {tablePage} of {totalPages}
+              </p>
+              <div className="flex items-center gap-1">
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  disabled={tablePage === 1}
+                  onClick={() => setTablePage(1)}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /><ChevronLeft className="w-3.5 h-3.5 -ml-2" />
+                </ActionIcon>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  disabled={tablePage === 1}
+                  onClick={() => setTablePage(p => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </ActionIcon>
+
+                {/* Page numbers */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const start = Math.max(1, Math.min(tablePage - 2, totalPages - 4))
+                  const pageNum = start + i
+                  if (pageNum > totalPages) return null
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setTablePage(pageNum)}
+                      className={`w-7 h-7 rounded text-xs font-medium transition-colors ${
+                        pageNum === tablePage
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  disabled={tablePage === totalPages}
+                  onClick={() => setTablePage(p => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </ActionIcon>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  disabled={tablePage === totalPages}
+                  onClick={() => setTablePage(totalPages)}
+                >
+                  <ChevronRight className="w-3.5 h-3.5" /><ChevronRight className="w-3.5 h-3.5 -ml-2" />
+                </ActionIcon>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  )
+}

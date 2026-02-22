@@ -21,6 +21,14 @@ cloudinary.config(
 )
 
 # ============================================
+# JWT CONFIGURATION
+# ============================================
+JWT_SECRET = os.getenv("JWT_SECRET", "dainggrader-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 24 * 7  # 7 days
+ADMIN_CODE = os.getenv("ADMIN_CODE", "DaingAdmin2026")
+
+# ============================================
 # MONGODB CONFIGURATION
 # ============================================
 mongo_client = None
@@ -36,7 +44,7 @@ def init_mongodb():
     
     try:
         mongo_client = MongoClient(os.getenv("MONGODB_URI"))
-        db = mongo_client[os.getenv("MONGODB_DB_NAME", "daing_grader_mobile")]
+        db = mongo_client[os.getenv("MONGODB_DB_NAME", "daing_grader")]
         scans_collection = db.scans
         history_collection = db.history
         users_collection = db.users
@@ -51,9 +59,13 @@ def init_mongodb():
         history_collection.create_index([("id", 1)], unique=True)
         history_collection.create_index([("user_id", 1)])  # Index for user filtering
         
-        # User indexes
-        users_collection.create_index([("username", 1)], unique=True)
+        # User indexes - email is unique, username may not exist for web users
+        try:
+            users_collection.create_index([("username", 1)], unique=True, sparse=True)
+        except:
+            pass  # Index may already exist
         users_collection.create_index([("email", 1)], unique=True)
+        users_collection.create_index([("firebase_uid", 1)], sparse=True)
         
         # Session indexes
         sessions_collection.create_index([("token", 1)], unique=True)
@@ -65,6 +77,13 @@ def init_mongodb():
     except Exception as e:
         print(f"❌ MongoDB Connection Error: {e}")
         return False
+
+def get_db(database_name: str = None):
+    """Get database instance. Used by both mobile and web backends."""
+    global db
+    if database_name:
+        return mongo_client[database_name]
+    return db
 
 def get_scans_collection():
     """Get scans collection"""

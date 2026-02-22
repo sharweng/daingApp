@@ -2,34 +2,94 @@
 Authentication Module
 =====================
 Handles user registration, login, logout, and token management.
+Supports both session-based auth (mobile) and JWT-based auth (web).
 """
 
 import os
+import io
+import re
+import json
 import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
-from .config import get_users_collection, get_sessions_collection
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
+
+from .config import get_users_collection, get_sessions_collection, get_db
+
+# Try to import optional dependencies
+try:
+    import bcrypt
+except ImportError:
+    bcrypt = None
+
+try:
+    from jose import jwt, JWTError
+except ImportError:
+    jwt = None
+    JWTError = Exception
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials, auth as firebase_auth
+except ImportError:
+    firebase_admin = None
+    credentials = None
+    firebase_auth = None
+
+try:
+    import cloudinary
+    import cloudinary.uploader
+except ImportError:
+    cloudinary = None
+
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "dainggrader-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 24 * 7  # 7 days
+ADMIN_CODE = os.getenv("ADMIN_CODE", "DaingAdmin2026")
+ALLOWED_ROLES = {"user", "seller", "admin"}
+ALLOWED_GENDERS = {"", "male", "female", "prefer_not_say"}
+BCRYPT_MAX_PASSWORD_BYTES = 72
+
+# Security setup
+security = HTTPBearer(auto_error=False)
 
 
 # ============================================
-# PASSWORD HASHING
+# PASSWORD HASHING (Dual support: SHA-256 + bcrypt)
 # ============================================
 
-def hash_password(password: str) -> str:
-    """Hash password using SHA-256 with salt."""
-    salt = secrets.token_hex(16)
-    password_hash = hashlib.sha256((password + salt).encode()).hexdigest()
-    return f"{salt}:{password_hash}"
+def hash_password(password: str, use_bcrypt: bool = True) -> str:
+    """Hash password using bcrypt (preferred) or SHA-256 with salt (fallback)."""
+    if use_bcrypt and bcrypt:
+        pw_bytes = password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(pw_bytes, salt)
+        return hashed.decode("utf-8")
+    else:
+        # Fallback to SHA-256 for backward compatibility
+        salt = secrets.token_hex(16)
+        password_hash = hashlib.sha256((password + salt).encode()).hexdigest()
+        return f"{salt}:{password_hash}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
-    """Verify password against stored hash."""
+    """Verify password against stored hash (supports both bcrypt and SHA-256)."""
     try:
-        salt, password_hash = stored_hash.split(":")
-        new_hash = hashlib.sha256((password + salt).encode()).hexdigest()
-        return new_hash == password_hash
+        # Try bcrypt first
+        if bcrypt and stored_hash.startswith("$2"):
+            pw_bytes = password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+            return bcrypt.checkpw(pw_bytes, stored_hash.encode("utf-8"))
+        # Fall back to SHA-256 for legacy hashes
+        if ":" in stored_hash:
+            salt, password_hash = stored_hash.split(":")
+            new_hash = hashlib.sha256((password + salt).encode()).hexdigest()
+            return new_hash == password_hash
+        return False
     except:
         return False
 
@@ -337,3 +397,287 @@ def update_user_role(user_id: str, new_role: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"❌ Failed to update role: {e}")
         return {"status": "error", "message": "Failed to update role"}
+
+
+# ============================================
+# JWT-BASED AUTHENTICATION (Web)
+# ============================================
+
+def _validate_phone(phone: str) -> bool:
+    """Validate phone number has at least 10 digits."""
+    digits = re.sub(r"\D", "", phone or "")
+    return len(digits) >= 10
+
+
+def create_jwt_token(user_id: str, email: str) -> str:
+    """Create a JWT token for web authentication."""
+    if not jwt:
+        raise HTTPException(status_code=500, detail="JWT not configured (install python-jose[cryptography])")
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _init_firebase_admin() -> bool:
+    """Initialize Firebase Admin SDK if configured."""
+    if not firebase_admin or not credentials:
+        return False
+    if firebase_admin._apps:
+        return True
+
+    service_json = (os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
+    service_path = (os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or "").strip()
+
+    try:
+        if service_json:
+            info = json.loads(service_json)
+            cred = credentials.Certificate(info)
+        elif service_path:
+            cred = credentials.Certificate(service_path)
+        else:
+            return False
+        firebase_admin.initialize_app(cred)
+        return True
+    except Exception:
+        return False
+
+
+def _verify_firebase_token(token: str) -> dict:
+    """Verify Firebase ID token."""
+    if not _init_firebase_admin() or not firebase_auth:
+        raise HTTPException(status_code=500, detail="Firebase auth not configured")
+    try:
+        return firebase_auth.verify_id_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+def get_current_user_web(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """Get current user from JWT or Firebase token (for web frontend)."""
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = credentials.credentials
+    db = get_db()
+
+    # Try Firebase auth first
+    if _init_firebase_admin():
+        try:
+            decoded = _verify_firebase_token(token)
+            firebase_uid = decoded.get("uid")
+            email = (decoded.get("email") or "").strip().lower()
+
+            user = None
+            if firebase_uid:
+                user = db["users"].find_one({"firebase_uid": firebase_uid})
+            if not user and email:
+                user = db["users"].find_one({"email": email})
+            if not user:
+                raise HTTPException(status_code=401, detail="User not registered")
+
+            updates = {}
+            if firebase_uid and user.get("firebase_uid") != firebase_uid:
+                updates["firebase_uid"] = firebase_uid
+            if email and (user.get("email") or "").strip().lower() != email:
+                updates["email"] = email
+            if "email_verified" in decoded:
+                updates["email_verified"] = bool(decoded.get("email_verified"))
+
+            if updates:
+                db["users"].update_one({"_id": user["_id"]}, {"$set": updates})
+                user = db["users"].find_one({"_id": user["_id"]})
+
+            return user
+        except HTTPException:
+            raise
+        except:
+            pass  # Fall through to JWT auth
+
+    # Fall back to JWT auth
+    if not jwt:
+        raise HTTPException(status_code=500, detail="Auth not configured")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    try:
+        from bson import ObjectId
+        user = db["users"].find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        user = None
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+def require_admin_user(user=Depends(get_current_user_web)):
+    """Dependency to require admin role."""
+    role = (user.get("role") or "user").strip().lower()
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    return user
+
+
+def require_seller_user(user=Depends(get_current_user_web)):
+    """Dependency to require seller role."""
+    role = (user.get("role") or "user").strip().lower()
+    if role != "seller":
+        raise HTTPException(status_code=403, detail="Sellers only")
+    return user
+
+
+# Pydantic models for web auth endpoints
+class RegisterBody(BaseModel):
+    name: str
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: str
+    password: str
+    city: Optional[str] = None
+    street_address: Optional[str] = None
+    province: Optional[str] = None
+    postal_code: Optional[str] = None
+    gender: Optional[str] = None
+    role: Optional[str] = None
+    admin_code: Optional[str] = None
+
+
+class LoginBody(BaseModel):
+    email: str
+    password: str
+    admin_code: Optional[str] = None
+
+
+class ProfileUpdateBody(BaseModel):
+    name: Optional[str] = None
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    city: Optional[str] = None
+    street_address: Optional[str] = None
+    province: Optional[str] = None
+    postal_code: Optional[str] = None
+    gender: Optional[str] = None
+
+
+def register_user_web(body: RegisterBody) -> Dict[str, Any]:
+    """Register a new user (web frontend)."""
+    name = (body.name or "").strip()
+    email = (body.email or "").strip().lower()
+    password = body.password or ""
+    requested_role = (body.role or "user").strip().lower() if body.role else "user"
+    admin_code = (body.admin_code or "").strip()
+
+    if not name or len(name) < 2:
+        raise HTTPException(status_code=400, detail="Name must be at least 2 characters")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+    if not password or len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    if admin_code:
+        if admin_code != ADMIN_CODE:
+            raise HTTPException(status_code=401, detail="Invalid admin code")
+        requested_role = "admin"
+
+    if requested_role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if requested_role == "admin" and not admin_code:
+        raise HTTPException(status_code=401, detail="Admin code is required")
+
+    db = get_db()
+    users = db["users"]
+
+    existing = users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    hashed = hash_password(password)
+    email_verify_token = secrets.token_urlsafe(32)
+    
+    doc = {
+        "name": name,
+        "full_name": (body.full_name or name).strip(),
+        "email": email,
+        "phone": (body.phone or "").strip(),
+        "city": (body.city or "").strip(),
+        "street_address": (body.street_address or "").strip(),
+        "province": (body.province or "").strip(),
+        "postal_code": (body.postal_code or "").strip(),
+        "gender": (body.gender or "").strip(),
+        "password_hash": hashed,
+        "created_at": datetime.utcnow().isoformat(),
+        "role": requested_role,
+        "email_verified": False,
+        "email_verify_token": email_verify_token,
+        "email_verify_token_expires": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+    }
+    if doc["phone"] and not _validate_phone(doc["phone"]):
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+    if doc["gender"] not in ALLOWED_GENDERS:
+        raise HTTPException(status_code=400, detail="Invalid gender value")
+    
+    result = users.insert_one(doc)
+    user_id = str(result.inserted_id)
+
+    # Try to send verification email
+    try:
+        from .email_sender import send_verification_email
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        verification_link = f"{frontend_url}/verify-email?token={email_verify_token}&user_id={user_id}"
+        send_verification_email(email, name, verification_link)
+    except Exception as e:
+        print(f"[WARNING] Failed to send verification email to {email}: {str(e)}")
+
+    token = create_jwt_token(user_id, email)
+    return {
+        "token": token,
+        "user": {"id": user_id, "name": name, "email": email, "role": requested_role},
+        "message": "Account created successfully. Please check your email to verify your account."
+    }
+
+
+def login_user_web(body: LoginBody) -> Dict[str, Any]:
+    """Login user (web frontend)."""
+    email = (body.email or "").strip().lower()
+    password = body.password or ""
+    admin_code = (body.admin_code or "").strip()
+
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required")
+
+    db = get_db()
+    users = db["users"]
+
+    user = users.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    stored_hash = user.get("password_hash")
+    if not stored_hash or not verify_password(password, stored_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    role = (user.get("role") or "user").strip().lower()
+    if role == "admin" and admin_code != ADMIN_CODE:
+        raise HTTPException(status_code=401, detail="Admin code is required")
+
+    user_id = str(user["_id"])
+    name = user.get("name") or email.split("@")[0]
+    token = create_jwt_token(user_id, email)
+    return {
+        "token": token,
+        "user": {"id": user_id, "name": name, "email": email, "role": role},
+    }
+

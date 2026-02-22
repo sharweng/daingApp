@@ -13,6 +13,7 @@ import {
   loginUser as apiLogin,
   registerUser as apiRegister,
   logoutUser as apiLogout,
+  googleSignIn as apiGoogleSignIn,
   getCurrentUser,
 } from "../services/api";
 
@@ -27,6 +28,11 @@ interface AuthContextType extends AuthState {
     username: string,
     email: string,
     password: string,
+  ) => Promise<AuthResponse>;
+  googleLogin: (
+    baseUrl: string,
+    accessToken?: string,
+    idToken?: string,
   ) => Promise<AuthResponse>;
   logout: (baseUrl: string) => Promise<void>;
   restoreSession: (baseUrl: string) => Promise<void>;
@@ -185,6 +191,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     [saveAuthData],
   );
 
+  // Google Login
+  const googleLogin = useCallback(
+    async (
+      baseUrl: string,
+      accessToken?: string,
+      idToken?: string,
+    ): Promise<AuthResponse> => {
+      setState((prev) => ({ ...prev, isLoading: true }));
+
+      const response = await apiGoogleSignIn(baseUrl, accessToken, idToken);
+
+      if (response.status === "success" && response.user && response.token) {
+        await saveAuthData(response.user, response.token);
+        setState({
+          user: response.user,
+          token: response.token,
+          isLoading: false,
+          isAuthenticated: true,
+        });
+      } else {
+        setState((prev) => ({ ...prev, isLoading: false }));
+      }
+
+      return response;
+    },
+    [saveAuthData],
+  );
+
   // Logout
   const logout = useCallback(
     async (baseUrl: string) => {
@@ -207,6 +241,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     ...state,
     login,
     register,
+    googleLogin,
     logout,
     restoreSession,
   };

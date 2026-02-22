@@ -12,9 +12,11 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
 import { theme } from "../styles/common";
 import type { Screen } from "../types";
 import { useAuth } from "../contexts/AuthContext";
+import { GOOGLE_CLIENT_ID } from "../constants/config";
 
 interface LoginScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -25,10 +27,60 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onNavigate,
   serverBaseUrl,
 }) => {
-  const { login, isLoading } = useAuth();
+  const { login, googleLogin, isLoading } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Manual Google OAuth flow using WebBrowser
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    
+    try {
+      // Build Google OAuth URL
+      const redirectUri = "https://auth.expo.io/@marbe/daingapp"; // Expo redirect URI
+      const scope = encodeURIComponent("openid email profile");
+      const responseType = "token";
+      const clientId = GOOGLE_CLIENT_ID.webClientId;
+      
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${clientId}&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `response_type=${responseType}&` +
+        `scope=${scope}`;
+      
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+      
+      if (result.type === "success" && result.url) {
+        // Parse access token from URL fragment
+        const urlParams = result.url.split("#")[1];
+        if (urlParams) {
+          const params = new URLSearchParams(urlParams);
+          const accessToken = params.get("access_token");
+          
+          if (accessToken) {
+            const response = await googleLogin(serverBaseUrl, accessToken);
+            if (response.status === "success") {
+              onNavigate("home");
+            } else {
+              Alert.alert("Google Sign-In Failed", response.message || "Please try again");
+            }
+          } else {
+            Alert.alert("Error", "Failed to get access token from Google");
+          }
+        }
+      } else if (result.type === "cancel") {
+        // User cancelled - don't show error
+      } else {
+        Alert.alert("Error", "Google sign-in was interrupted");
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!username.trim()) {
@@ -139,6 +191,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </View>
 
           <TouchableOpacity
+            style={[styles.googleButton, googleLoading && styles.buttonDisabled]}
+            onPress={handleGoogleSignIn}
+            disabled={googleLoading}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#333" />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={20} color="#DB4437" />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.registerButton}
             onPress={() => onNavigate("register")}
           >
@@ -234,6 +301,23 @@ const styles = StyleSheet.create({
   },
   loginButtonText: {
     color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  googleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    height: 50,
+    marginBottom: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  googleButtonText: {
+    color: "#333",
     fontSize: 16,
     fontWeight: "600",
   },

@@ -2,6 +2,7 @@
 API Routes Module
 =================
 FastAPI route handlers for all endpoints.
+Supports both mobile (Form-based) and web (JSON-based) authentication.
 """
 
 import io
@@ -9,7 +10,8 @@ import cv2
 import numpy as np
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, Header, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Header, HTTPException, Depends
+from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 import cloudinary
 import cloudinary.uploader
@@ -30,18 +32,29 @@ from .history import (
 from .analytics import log_scan_analytics, delete_analytics_by_scan_id, get_analytics_summary, get_user_analytics_summary
 from .dataset import fetch_auto_dataset, delete_auto_dataset_entry, save_to_auto_dataset
 from .auth import (
+    # Mobile auth (session-based)
     register_user,
     login_user,
     logout_user,
     validate_session,
-    get_user_by_id
+    get_user_by_id,
+    # Web auth (JWT-based)
+    RegisterBody,
+    LoginBody,
+    ProfileUpdateBody,
+    register_user_web,
+    login_user_web,
+    get_current_user_web,
+    require_admin_user,
+    require_seller_user,
 )
+from .config import get_db
 
 router = APIRouter()
 
 
 # ============================================
-# AUTHENTICATION ROUTES
+# MOBILE AUTHENTICATION ROUTES (Form-based)
 # ============================================
 
 @router.post("/auth/register")
@@ -82,22 +95,406 @@ async def logout(authorization: Optional[str] = Header(None)):
 
 @router.get("/auth/me")
 async def get_current_user(authorization: Optional[str] = Header(None)):
-    """Get current authenticated user info."""
+    """
+    Get current authenticated user info.
+    Supports both session tokens (mobile) and JWT/Firebase tokens (web).
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = authorization.replace("Bearer ", "")
-    session = validate_session(token)
     
-    if not session:
+    # Try session-based auth first (mobile)
+    session = validate_session(token)
+    if session:
+        user = get_user_by_id(session["user_id"])
+        if user:
+            return {"status": "success", "user": user}
+    
+    # Try JWT/Firebase auth (web)
+    try:
+        from .auth import get_current_user_web, security
+        from fastapi.security import HTTPAuthorizationCredentials
+        
+        # Create mock credentials object
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        user = await get_current_user_web.__wrapped__(creds)
+        
+        if user:
+            uid = str(user["_id"])
+            return {
+                "id": uid,
+                "name": user.get("name") or "",
+                "full_name": user.get("full_name") or user.get("name") or "",
+                "email": user.get("email") or "",
+                "avatar_url": user.get("avatar_url") or None,
+                "phone": user.get("phone") or "",
+                "city": user.get("city") or "",
+                "street_address": user.get("street_address") or "",
+                "province": user.get("province") or "",
+                "postal_code": user.get("postal_code") or "",
+                "gender": user.get("gender") or "",
+                "role": (user.get("role") or "user").strip().lower(),
+                "email_verified": bool(user.get("email_verified")),
+            }
+    except Exception as e:
+        print(f"JWT/Firebase auth failed: {e}")
+    
+    raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+
+# ============================================
+# FIREBASE REGISTRATION (Web)
+# ============================================
+
+class RegisterFirebaseBody(BaseModel):
+    name: str
+    email: str
+    role: Optional[str] = None
+    admin_code: Optional[str] = None
+
+@router.post("/auth/register-firebase")
+async def register_firebase(body: RegisterFirebaseBody, authorization: Optional[str] = Header(None)):
+    """Register a new user using Firebase Auth (creates MongoDB user profile)."""
+    from .auth import (
+        _init_firebase_admin, _verify_firebase_token, ADMIN_CODE, ALLOWED_ROLES
+    )
+    
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Verify Firebase token
+    if not _init_firebase_admin():
+        raise HTTPException(status_code=500, detail="Firebase auth not configured")
+    
+    claims = _verify_firebase_token(token)
+    
+    name = (body.name or "").strip()
+    email = (body.email or "").strip().lower()
+    requested_role = (body.role or "user").strip().lower() if body.role else "user"
+    admin_code = (body.admin_code or "").strip()
+
+    if not name or len(name) < 2:
+        raise HTTPException(status_code=400, detail="Name must be at least 2 characters")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    claim_email = (claims.get("email") or "").strip().lower()
+    if not claim_email or claim_email != email:
+        raise HTTPException(status_code=400, detail="Email does not match Firebase account")
+
+    if admin_code:
+        if admin_code != ADMIN_CODE:
+            raise HTTPException(status_code=401, detail="Invalid admin code")
+        requested_role = "admin"
+
+    if requested_role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if requested_role == "admin" and not admin_code:
+        raise HTTPException(status_code=401, detail="Admin code is required")
+
+    db = get_db()
+    users = db["users"]
+    firebase_uid = claims.get("uid")
+    email_verified = bool(claims.get("email_verified"))
+
+    existing = None
+    if firebase_uid:
+        existing = users.find_one({"firebase_uid": firebase_uid})
+    if not existing:
+        existing = users.find_one({"email": email})
+
+    if existing:
+        updates = {}
+        if firebase_uid and existing.get("firebase_uid") != firebase_uid:
+            updates["firebase_uid"] = firebase_uid
+        if email_verified != existing.get("email_verified"):
+            updates["email_verified"] = email_verified
+        if updates:
+            users.update_one({"_id": existing["_id"]}, {"$set": updates})
+            existing = users.find_one({"_id": existing["_id"]})
+        uid = str(existing["_id"])
+        return {
+            "id": uid,
+            "name": existing.get("name") or "",
+            "full_name": existing.get("full_name") or existing.get("name") or "",
+            "email": existing.get("email") or "",
+            "avatar_url": existing.get("avatar_url") or None,
+            "phone": existing.get("phone") or "",
+            "city": existing.get("city") or "",
+            "street_address": existing.get("street_address") or "",
+            "province": existing.get("province") or "",
+            "postal_code": existing.get("postal_code") or "",
+            "gender": existing.get("gender") or "",
+            "role": (existing.get("role") or "user").strip().lower(),
+            "email_verified": bool(existing.get("email_verified")),
+        }
+
+    from datetime import datetime
+    doc = {
+        "name": name,
+        "full_name": name,
+        "email": email,
+        "phone": "",
+        "city": "",
+        "street_address": "",
+        "province": "",
+        "postal_code": "",
+        "gender": "",
+        "firebase_uid": firebase_uid,
+        "email_verified": email_verified,
+        "created_at": datetime.utcnow().isoformat(),
+        "role": requested_role,
+    }
+
+    result = users.insert_one(doc)
+    user_id = str(result.inserted_id)
+    return {
+        "id": user_id,
+        "name": doc.get("name") or "",
+        "full_name": doc.get("full_name") or doc.get("name") or "",
+        "email": doc.get("email") or "",
+        "avatar_url": doc.get("avatar_url") or None,
+        "phone": doc.get("phone") or "",
+        "city": doc.get("city") or "",
+        "street_address": doc.get("street_address") or "",
+        "province": doc.get("province") or "",
+        "postal_code": doc.get("postal_code") or "",
+        "gender": doc.get("gender") or "",
+        "role": (doc.get("role") or "user").strip().lower(),
+        "email_verified": bool(doc.get("email_verified")),
+    }
+
+
+@router.patch("/auth/profile")
+async def update_profile(body: ProfileUpdateBody, authorization: Optional[str] = Header(None)):
+    """Update user profile (web frontend)."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Get user from JWT/Firebase
+    try:
+        from .auth import get_current_user_web
+        from fastapi.security import HTTPAuthorizationCredentials
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        user = await get_current_user_web.__wrapped__(creds)
+    except:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
-    user = get_user_by_id(session["user_id"])
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    import re
+    from .auth import _validate_phone, ALLOWED_GENDERS
     
-    return {"status": "success", "user": user}
+    db = get_db()
+    users = db["users"]
+    updates = {}
+    
+    if body.name is not None and len((body.name or "").strip()) >= 2:
+        updates["name"] = body.name.strip()
+    if body.full_name is not None and len((body.full_name or "").strip()) >= 2:
+        updates["full_name"] = body.full_name.strip()
+        if "name" not in updates:
+            updates["name"] = body.full_name.strip()
+    if body.phone is not None:
+        phone = (body.phone or "").strip()
+        if phone and not _validate_phone(phone):
+            raise HTTPException(status_code=400, detail="Invalid phone number")
+        updates["phone"] = phone
+    if body.city is not None:
+        updates["city"] = (body.city or "").strip()
+    if body.street_address is not None:
+        updates["street_address"] = (body.street_address or "").strip()
+    if body.province is not None:
+        updates["province"] = (body.province or "").strip()
+    if body.postal_code is not None:
+        updates["postal_code"] = (body.postal_code or "").strip()
+    if body.gender is not None:
+        gender = (body.gender or "").strip()
+        if gender not in ALLOWED_GENDERS:
+            raise HTTPException(status_code=400, detail="Invalid gender value")
+        updates["gender"] = gender
+    if body.email is not None:
+        email = (body.email or "").strip().lower()
+        if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
+        existing = users.find_one({"email": email, "_id": {"$ne": user["_id"]}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        updates["email"] = email
+    
+    if updates:
+        users.update_one({"_id": user["_id"]}, {"$set": updates})
+    
+    updated = users.find_one({"_id": user["_id"]})
+    uid = str(updated["_id"])
+    return {
+        "id": uid,
+        "name": updated.get("name") or "",
+        "full_name": updated.get("full_name") or updated.get("name") or "",
+        "email": updated.get("email") or "",
+        "avatar_url": updated.get("avatar_url") or None,
+        "phone": updated.get("phone") or "",
+        "city": updated.get("city") or "",
+        "street_address": updated.get("street_address") or "",
+        "province": updated.get("province") or "",
+        "postal_code": updated.get("postal_code") or "",
+        "gender": updated.get("gender") or "",
+        "role": (updated.get("role") or "user").strip().lower(),
+    }
 
+
+@router.post("/auth/profile/avatar")
+async def upload_profile_avatar(file: UploadFile = File(...), authorization: Optional[str] = Header(None)):
+    """Upload profile avatar (web frontend)."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    # Get user from JWT/Firebase
+    try:
+        from .auth import get_current_user_web
+        from fastapi.security import HTTPAuthorizationCredentials
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        user = await get_current_user_web.__wrapped__(creds)
+    except:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    
+    if not cloudinary:
+        raise HTTPException(status_code=500, detail="Cloudinary not configured")
+    
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:  # 5 MB
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+    
+    user_id = str(user["_id"])
+    folder = "daing-profile-avatars"
+    public_id = f"avatar_{user_id}"
+    
+    try:
+        result = cloudinary.uploader.upload(
+            io.BytesIO(content),
+            folder=folder,
+            public_id=public_id,
+            resource_type="image",
+            overwrite=True,
+        )
+        url = result.get("secure_url")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    
+    db = get_db()
+    db["users"].update_one({"_id": user["_id"]}, {"$set": {"avatar_url": url}})
+    return {"avatar_url": url}
+
+
+# ============================================
+# WEB AUTHENTICATION ROUTES (JSON-based JWT)
+# ============================================
+
+@router.post("/web/auth/register")
+async def web_register(body: RegisterBody):
+    """Register a new user (web frontend with JSON body)."""
+    return register_user_web(body)
+
+
+@router.post("/web/auth/login")
+async def web_login(body: LoginBody):
+    """Login user (web frontend with JSON body)."""
+    return login_user_web(body)
+
+
+@router.get("/web/auth/me")
+async def web_get_me(user=Depends(get_current_user_web)):
+    """Get current user info (web frontend)."""
+    uid = str(user["_id"])
+    return {
+        "id": uid,
+        "name": user.get("name") or "",
+        "full_name": user.get("full_name") or user.get("name") or "",
+        "email": user.get("email") or "",
+        "avatar_url": user.get("avatar_url") or None,
+        "phone": user.get("phone") or "",
+        "city": user.get("city") or "",
+        "street_address": user.get("street_address") or "",
+        "province": user.get("province") or "",
+        "postal_code": user.get("postal_code") or "",
+        "gender": user.get("gender") or "",
+        "role": (user.get("role") or "user").strip().lower(),
+        "email_verified": bool(user.get("email_verified")),
+    }
+
+
+@router.patch("/web/auth/profile")
+async def web_update_profile(body: ProfileUpdateBody, user=Depends(get_current_user_web)):
+    """Update user profile (web frontend)."""
+    import re
+    from .auth import _validate_phone, ALLOWED_GENDERS
+    
+    db = get_db()
+    users = db["users"]
+    updates = {}
+    
+    if body.name is not None and len((body.name or "").strip()) >= 2:
+        updates["name"] = body.name.strip()
+    if body.full_name is not None and len((body.full_name or "").strip()) >= 2:
+        updates["full_name"] = body.full_name.strip()
+        if "name" not in updates:
+            updates["name"] = body.full_name.strip()
+    if body.phone is not None:
+        phone = (body.phone or "").strip()
+        if phone and not _validate_phone(phone):
+            raise HTTPException(status_code=400, detail="Invalid phone number")
+        updates["phone"] = phone
+    if body.city is not None:
+        updates["city"] = (body.city or "").strip()
+    if body.street_address is not None:
+        updates["street_address"] = (body.street_address or "").strip()
+    if body.province is not None:
+        updates["province"] = (body.province or "").strip()
+    if body.postal_code is not None:
+        updates["postal_code"] = (body.postal_code or "").strip()
+    if body.gender is not None:
+        gender = (body.gender or "").strip()
+        if gender not in ALLOWED_GENDERS:
+            raise HTTPException(status_code=400, detail="Invalid gender value")
+        updates["gender"] = gender
+    if body.email is not None:
+        email = (body.email or "").strip().lower()
+        if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
+        existing = users.find_one({"email": email, "_id": {"$ne": user["_id"]}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        updates["email"] = email
+    
+    if updates:
+        users.update_one({"_id": user["_id"]}, {"$set": updates})
+    
+    updated = users.find_one({"_id": user["_id"]})
+    uid = str(updated["_id"])
+    return {
+        "id": uid,
+        "name": updated.get("name") or "",
+        "full_name": updated.get("full_name") or updated.get("name") or "",
+        "email": updated.get("email") or "",
+        "avatar_url": updated.get("avatar_url") or None,
+        "phone": updated.get("phone") or "",
+        "city": updated.get("city") or "",
+        "street_address": updated.get("street_address") or "",
+        "province": updated.get("province") or "",
+        "postal_code": updated.get("postal_code") or "",
+        "gender": updated.get("gender") or "",
+        "role": (updated.get("role") or "user").strip().lower(),
+    }
+
+
+# ============================================
+# FISH ANALYSIS ROUTES
+# ============================================
 
 @router.post("/analyze")
 async def analyze_fish(
