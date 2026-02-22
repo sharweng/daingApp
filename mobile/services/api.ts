@@ -265,25 +265,24 @@ export const registerUser = async (
   password: string,
 ): Promise<AuthResponse> => {
   try {
+    const formData = new FormData();
+    formData.append("username", username);
+    formData.append("email", email);
+    formData.append("password", password);
+
     const response = await axios.post(
       `${normalizeUrl(baseUrl)}/auth/register`,
+      formData,
       {
-        name: username,
-        email,
-        password,
-        role: "user",
-      },
-      {
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "multipart/form-data" },
         timeout: 10000,
       },
     );
-    // Web backend returns { token, user, message } without status
     const data = response.data;
     return {
-      status: "success",
+      status: data.status || "success",
       token: data.token,
-      user: mapWebUserToMobileUser(data.user),
+      user: data.user ? mapWebUserToMobileUser(data.user) : undefined,
       message: data.message,
     };
   } catch (error: any) {
@@ -300,23 +299,23 @@ export const loginUser = async (
   password: string,
 ): Promise<AuthResponse> => {
   try {
+    const formData = new FormData();
+    formData.append("username", username);
+    formData.append("password", password);
+
     const response = await axios.post(
       `${normalizeUrl(baseUrl)}/auth/login`,
+      formData,
       {
-        email: username,
-        password,
-      },
-      {
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "multipart/form-data" },
         timeout: 10000,
       },
     );
-    // Web backend returns { token, user } without status
     const data = response.data;
     return {
-      status: "success",
+      status: data.status || "success",
       token: data.token,
-      user: mapWebUserToMobileUser(data.user),
+      user: data.user ? mapWebUserToMobileUser(data.user) : undefined,
     };
   } catch (error: any) {
     return {

@@ -11,41 +11,44 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { commonStyles, theme } from "../styles/common";
-import { HomeScreen } from "../components/HomeScreen";
-import { ScanScreen } from "../components/ScanScreen";
-import { AnalyticsScreen } from "../components/AnalyticsScreen";
-import { HistoryScreen } from "../components/HistoryScreen";
-import { AutoDatasetScreen } from "../components/AutoDatasetScreen";
-import { SettingsModal } from "../components/SettingsModal";
-import { LoginScreen } from "../components/LoginScreen";
-import { RegisterScreen } from "../components/RegisterScreen";
+// Core screens
+import { HomeScreen } from "../components/core/HomeScreen";
+import { ScanScreen } from "../components/core/ScanScreen";
+import { AnalyticsScreen } from "../components/core/AnalyticsScreen";
+import { HistoryScreen } from "../components/core/HistoryScreen";
+import { AutoDatasetScreen } from "../components/core/AutoDatasetScreen";
+// Shared components
+import { SettingsModal } from "../components/shared/SettingsModal";
+// Auth screens
+import { LoginScreen } from "../components/auth/LoginScreen";
+import { RegisterScreen } from "../components/auth/RegisterScreen";
 // Ecommerce screens
-import CatalogScreen from "../components/CatalogScreen";
-import ProductDetailScreen from "../components/ProductDetailScreen";
-import CartScreen from "../components/CartScreen";
-import WishlistScreen from "../components/WishlistScreen";
-import CheckoutScreen from "../components/CheckoutScreen";
-import UserProfileScreen from "../components/UserProfileScreen";
-import UserOrdersScreen from "../components/UserOrdersScreen";
-import OrderDetailScreen from "../components/OrderDetailScreen";
-import OrderSuccessScreen from "../components/OrderSuccessScreen";
+import CatalogScreen from "../components/ecommerce/CatalogScreen";
+import ProductDetailScreen from "../components/ecommerce/ProductDetailScreen";
+import CartScreen from "../components/ecommerce/CartScreen";
+import WishlistScreen from "../components/ecommerce/WishlistScreen";
+import CheckoutScreen from "../components/ecommerce/CheckoutScreen";
+import UserProfileScreen from "../components/ecommerce/UserProfileScreen";
+import UserOrdersScreen from "../components/ecommerce/UserOrdersScreen";
+import OrderDetailScreen from "../components/ecommerce/OrderDetailScreen";
+import OrderSuccessScreen from "../components/ecommerce/OrderSuccessScreen";
 // Seller screens
-import SellerDashboardScreen from "../components/SellerDashboardScreen";
-import SellerProductsScreen from "../components/SellerProductsScreen";
-import SellerProductEditScreen from "../components/SellerProductEditScreen";
-import SellerOrdersScreen from "../components/SellerOrdersScreen";
-import SellerOrderDetailScreen from "../components/SellerOrderDetailScreen";
-import SellerReviewsScreen from "../components/SellerReviewsScreen";
+import SellerDashboardScreen from "../components/seller/SellerDashboardScreen";
+import SellerProductsScreen from "../components/seller/SellerProductsScreen";
+import SellerProductEditScreen from "../components/seller/SellerProductEditScreen";
+import SellerOrdersScreen from "../components/seller/SellerOrdersScreen";
+import SellerOrderDetailScreen from "../components/seller/SellerOrderDetailScreen";
+import SellerReviewsScreen from "../components/seller/SellerReviewsScreen";
 // Admin screens
-import AdminDashboardScreen from "../components/AdminDashboardScreen";
-import AdminUsersScreen from "../components/AdminUsersScreen";
-import AdminOrdersScreen from "../components/AdminOrdersScreen";
-import AdminVouchersScreen from "../components/AdminVouchersScreen";
-import AdminPostsScreen from "../components/AdminPostsScreen";
-import AdminScansScreen from "../components/AdminScansScreen";
-import AdminAuditLogsScreen from "../components/AdminAuditLogsScreen";
+import AdminDashboardScreen from "../components/admin/AdminDashboardScreen";
+import AdminUsersScreen from "../components/admin/AdminUsersScreen";
+import AdminOrdersScreen from "../components/admin/AdminOrdersScreen";
+import AdminVouchersScreen from "../components/admin/AdminVouchersScreen";
+import AdminPostsScreen from "../components/admin/AdminPostsScreen";
+import AdminScansScreen from "../components/admin/AdminScansScreen";
+import AdminAuditLogsScreen from "../components/admin/AdminAuditLogsScreen";
 // Community screens
-import CommunityScreen from "../components/CommunityScreen";
+import CommunityScreen from "../components/community/CommunityScreen";
 import { takePicture } from "../utils/camera";
 import { analyzeFish, fetchHistory } from "../services/api";
 import { DEFAULT_SERVER_BASE_URL, getServerUrls } from "../constants/config";
