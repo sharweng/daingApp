@@ -1,0 +1,10 @@
+__pycache__
+*.md
+.env
+.env.local
+.env.production
+node_modules/
+daing-grader-web/dist/
+DaingApp/dist/
+backend/dainggrader-auth-firebase-adminsdk-fbsvc-5f23a79227.json
+daing-grader-web/dist

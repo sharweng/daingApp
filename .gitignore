@@ -1,0 +1,7 @@
+__pycache__
+dataset
+*.md
+.env
+cloudflared.exe
+node_modules
+dist

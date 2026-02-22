@@ -1,0 +1,122 @@
+[
+  {
+    "id": "scan_20260209_094802_120590",
+    "timestamp": "2026-02-09T09:48:02.120590",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1770601683/daing-history/2026-02-09/scan_20260209_094802_120590.jpg",
+    "folder": "daing-history/2026-02-09",
+    "fish_type": "Flyingfish",
+    "grade": "Local",
+    "score": 0.8699,
+    "user_id": "6988e02d7739000dfe74e050",
+    "user_name": "Doe John"
+  },
+  {
+    "id": "scan_20260209_032307_790665",
+    "timestamp": "2026-02-09T03:23:07.790665",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1770578591/daing-history/2026-02-09/scan_20260209_032307_790665.jpg",
+    "folder": "daing-history/2026-02-09",
+    "fish_type": "Flyingfish",
+    "grade": "Export",
+    "score": 0.9202,
+    "user_id": "6988e02d7739000dfe74e050",
+    "user_name": "Doe John"
+  },
+  {
+    "id": "scan_20260208_235338_650902",
+    "timestamp": "2026-02-08T23:53:38.650902",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1770566018/daing-history/2026-02-08/scan_20260208_235338_650902.jpg",
+    "folder": "daing-history/2026-02-08",
+    "fish_type": "Dalagangbukid",
+    "grade": "Export",
+    "score": 0.9347,
+    "user_id": "69873f4c450dbae8e491d3f2",
+    "user_name": "Admin One"
+  },
+  {
+    "id": "scan_20260208_235319_425505",
+    "timestamp": "2026-02-08T23:53:19.425505",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1770566002/daing-history/2026-02-08/scan_20260208_235319_425505.jpg",
+    "folder": "daing-history/2026-02-08",
+    "fish_type": "Dalagangbukid",
+    "grade": "Reject",
+    "score": 0.4284,
+    "user_id": "69873f4c450dbae8e491d3f2",
+    "user_name": "Admin One"
+  },
+  {
+    "id": "scan_20260208_232518_277622",
+    "timestamp": "2026-02-08T23:25:18.277622",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1770564319/daing-history/2026-02-08/scan_20260208_232518_277622.jpg",
+    "folder": "daing-history/2026-02-08",
+    "fish_type": "Unknown",
+    "grade": "Reject",
+    "score": 0.0,
+    "user_id": "69873f4c450dbae8e491d3f2",
+    "user_name": "Admin One"
+  },
+  {
+    "id": "scan_20260208_132022_327892",
+    "timestamp": "2026-02-08T13:20:22.327892",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1770528024/daing-history/2026-02-08/scan_20260208_132022_327892.jpg",
+    "folder": "daing-history/2026-02-08",
+    "fish_type": "Flyingfish",
+    "grade": "Export",
+    "score": 0.9377,
+    "user_id": "69873f4c450dbae8e491d3f2",
+    "user_name": "Admin One"
+  },
+  {
+    "id": "scan_20260131_192136_123936",
+    "timestamp": "2026-01-31T19:21:36.123936",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769858497/daing-history/2026-01-31/scan_20260131_192136_123936.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_154808_455339",
+    "timestamp": "2026-01-31T15:48:08.455339",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769845689/daing-history/2026-01-31/scan_20260131_154808_455339.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_154740_362773",
+    "timestamp": "2026-01-31T15:47:40.362773",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769845660/daing-history/2026-01-31/scan_20260131_154740_362773.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_153908_626484",
+    "timestamp": "2026-01-31T15:39:08.626484",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769845151/daing-history/2026-01-31/scan_20260131_153908_626484.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_145506_160785",
+    "timestamp": "2026-01-31T14:55:06.160785",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769842506/daing-history/2026-01-31/scan_20260131_145506_160785.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_145455_722209",
+    "timestamp": "2026-01-31T14:54:55.722209",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769842497/daing-history/2026-01-31/scan_20260131_145455_722209.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_145129_735049",
+    "timestamp": "2026-01-31T14:51:29.735049",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769842291/daing-history/2026-01-31/scan_20260131_145129_735049.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_145100_940127",
+    "timestamp": "2026-01-31T14:51:00.940127",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769842261/daing-history/2026-01-31/scan_20260131_145100_940127.jpg",
+    "folder": "daing-history/2026-01-31"
+  },
+  {
+    "id": "scan_20260131_145047_090134",
+    "timestamp": "2026-01-31T14:50:47.090134",
+    "url": "https://res.cloudinary.com/dq2bhvzig/image/upload/v1769842249/daing-history/2026-01-31/scan_20260131_145047_090134.jpg",
+    "folder": "daing-history/2026-01-31"
+  }
+]

@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+opencv-python
+cloudinary
+python-dotenv
+ultralytics
+# for web backend (signup/login)
+pymongo
+bcrypt
+python-jose[cryptography]
+# Firebase Admin SDK (verify ID tokens)
+firebase-admin
+# for web backend (contact form - EmailStr validation)
+email-validator
+reportlab

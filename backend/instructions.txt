@@ -1,0 +1,16 @@
+1. rename .env.example to .env
+
+2. enter credentials in the env
+
+3. run code below in backend folder to download cloudflare
+curl -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+
+4. run code below in backend folder to start cloudflare tunnel
+./cloudflared.exe tunnel --url http://localhost:8000
+
+4. run code below in another backend folder to start the backend server
+sh start.bat 
+or
+py -3.12 -m uvicorn server:app --host 0.0.0.0 --port 8000
+
+5. connect from the apk
