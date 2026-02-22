@@ -1,6 +1,5 @@
 // Default server base URL (can be customized in settings)
-export const DEFAULT_SERVER_BASE_URL =
-  "https://presenting-url-geneva-powerful.trycloudflare.com"; //http://192.168.1.109:8000
+export const DEFAULT_SERVER_BASE_URL = "http://192.168.1.114:8000"; //http://192.168.1.114:8000
 
 const normalizeBaseUrl = (baseUrl: string) =>
   baseUrl.trim().replace(/\/+$/, "");
