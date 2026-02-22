@@ -84,6 +84,29 @@ export interface HistoryEntry {
   timestamp: string;
   folder?: string;
   user_id?: string;
+  // Analysis data (optional for backwards compatibility)
+  detections?: Array<{
+    fish_type: string;
+    confidence: number;
+  }>;
+  color_analysis?: {
+    consistency_score?: number;
+    quality_grade?: string;
+    color_stats?: Array<{
+      combined_std?: number;
+    }>;
+  };
+  mold_analysis?: {
+    avg_coverage_percent?: number;
+    overall_severity?: string;
+    fish_results?: Array<{
+      mold_detected?: boolean;
+      mold_coverage_percent?: number;
+      severity?: string;
+    }>;
+  };
+  quality_grade?: string;
+  is_daing_detected?: boolean;
 }
 
 export interface ColorConsistencyStats {

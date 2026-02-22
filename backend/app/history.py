@@ -17,7 +17,8 @@ def add_history_entry(entry: dict) -> bool:
     Add a history entry to MongoDB.
     
     Args:
-        entry: dict with id, timestamp, url, folder, user_id (optional)
+        entry: dict with id, timestamp, url, folder, user_id (optional),
+               detections, color_analysis, mold_analysis (optional)
         
     Returns:
         True if successful, False otherwise
@@ -33,8 +34,21 @@ def add_history_entry(entry: dict) -> bool:
             "timestamp": datetime.fromisoformat(entry["timestamp"]),
             "url": entry["url"],
             "folder": entry.get("folder", ""),
-            "user_id": entry.get("user_id")  # Can be None for unauthenticated scans
+            "user_id": entry.get("user_id"),  # Can be None for unauthenticated scans
+            # Analysis data
+            "detections": entry.get("detections"),
+            "color_analysis": entry.get("color_analysis"),
+            "mold_analysis": entry.get("mold_analysis"),
+            "quality_grade": entry.get("quality_grade"),
+            "is_daing_detected": entry.get("is_daing_detected", False),
         }
+        # Debug: Log what we're saving
+        print(f"📊 Saving history with analysis data:")
+        print(f"   - is_daing_detected: {entry_doc.get('is_daing_detected')}")
+        print(f"   - detections count: {len(entry_doc.get('detections') or [])}")
+        print(f"   - has color_analysis: {entry_doc.get('color_analysis') is not None}")
+        print(f"   - has mold_analysis: {entry_doc.get('mold_analysis') is not None}")
+        
         history_collection.insert_one(entry_doc)
         print(f"📚 History saved to MongoDB: {entry['id']}")
         return True
@@ -90,6 +104,15 @@ def get_user_history_entries(user_id: str) -> list:
         for entry in entries:
             if isinstance(entry.get("timestamp"), datetime):
                 entry["timestamp"] = entry["timestamp"].isoformat()
+        
+        # Debug: Log what we're returning
+        if entries:
+            first = entries[0]
+            print(f"📤 Returning {len(entries)} history entries for user {user_id}")
+            print(f"   - First entry has is_daing_detected: {first.get('is_daing_detected')}")
+            print(f"   - First entry has detections: {len(first.get('detections') or [])}")
+            print(f"   - First entry has color_analysis: {first.get('color_analysis') is not None}")
+        
         return entries
     except Exception as e:
         print(f"⚠️ Failed to get user history from MongoDB: {e}")

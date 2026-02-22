@@ -72,6 +72,7 @@ export const ScanScreen: React.FC<ScanScreenProps> = ({
   onViewHistoryImage,
 }) => {
   const [selectedFishIndex, setSelectedFishIndex] = useState(0);
+  const [detailsExpanded, setDetailsExpanded] = useState(true);
 
   // SCENARIO A: SHOW RESULT FROM SERVER
   if (analysisResult) {
@@ -169,113 +170,113 @@ export const ScanScreen: React.FC<ScanScreenProps> = ({
           {/* Fish Details Overlay Panel - Only show if daing detected */}
           {analysisResult.is_daing_detected && fishCount > 0 && (
             <View style={styles.detailsOverlay}>
-              <View style={styles.detailsCard}>
-                {/* Classification */}
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    name="fish-outline"
-                    size={12}
-                    color={theme.colors.textSecondary}
-                  />
-                  <Text style={styles.detailValue}>
-                    {selectedDetection?.fish_type || "Unknown"}{" "}
-                    <Text style={styles.confidence}>
-                      {((selectedDetection?.confidence || 0) * 100).toFixed(0)}%
+              {/* Toggle Header */}
+              <TouchableOpacity
+                style={[
+                  styles.detailsToggle,
+                  !detailsExpanded && styles.detailsToggleCollapsed,
+                ]}
+                onPress={() => setDetailsExpanded(!detailsExpanded)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.detailsToggleText}>Analysis Details</Text>
+                <Ionicons
+                  name={detailsExpanded ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color={theme.colors.text}
+                />
+              </TouchableOpacity>
+
+              {/* Collapsible Content */}
+              {detailsExpanded && (
+                <View style={styles.detailsCard}>
+                  {/* Classification */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Type:</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedDetection?.fish_type || "Unknown"}{" "}
+                      <Text style={styles.confidence}>
+                        {((selectedDetection?.confidence || 0) * 100).toFixed(
+                          0,
+                        )}
+                        %
+                      </Text>
                     </Text>
-                  </Text>
-                </View>
+                  </View>
 
-                {/* Color Score */}
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    name="color-palette-outline"
-                    size={12}
-                    color={theme.colors.textSecondary}
-                  />
-                  <Text style={styles.detailValue}>{getFishColorScore()}%</Text>
-                </View>
+                  {/* Color Score */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Color:</Text>
+                    <Text style={styles.detailValue}>
+                      {getFishColorScore()}%
+                    </Text>
+                  </View>
 
-                {/* Quality Grade */}
-                <View
-                  style={[
-                    styles.gradeBadge,
-                    { backgroundColor: getGradeColor(getFishGrade()) + "20" },
-                  ]}
-                >
-                  <Ionicons
-                    name="ribbon-outline"
-                    size={12}
-                    color={getGradeColor(getFishGrade())}
-                  />
-                  <Text
+                  {/* Quality Grade */}
+                  <View
                     style={[
-                      styles.gradeText,
-                      { color: getGradeColor(getFishGrade()) },
+                      styles.gradeBadge,
+                      { backgroundColor: getGradeColor(getFishGrade()) + "20" },
                     ]}
                   >
-                    {getFishGrade()}
-                  </Text>
-                </View>
+                    <Text style={styles.detailLabel}>Grade:</Text>
+                    <Text
+                      style={[
+                        styles.gradeText,
+                        { color: getGradeColor(getFishGrade()) },
+                      ]}
+                    >
+                      {getFishGrade()}
+                    </Text>
+                  </View>
 
-                {/* Mold Coverage */}
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    name="alert-circle-outline"
-                    size={12}
-                    color={theme.colors.textSecondary}
-                  />
-                  <Text style={styles.detailValue}>
-                    Mold{" "}
-                    {fishMoldResult?.mold_coverage_percent?.toFixed(1) ||
-                      analysisResult.mold_analysis?.avg_coverage_percent?.toFixed(
-                        1,
-                      ) ||
-                      "0.0"}
-                    %
-                  </Text>
-                </View>
+                  {/* Mold Coverage */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Mold:</Text>
+                    <Text style={styles.detailValue}>
+                      {fishMoldResult?.mold_coverage_percent?.toFixed(1) ||
+                        analysisResult.mold_analysis?.avg_coverage_percent?.toFixed(
+                          1,
+                        ) ||
+                        "0.0"}
+                      %
+                    </Text>
+                  </View>
 
-                {/* Mold Severity */}
-                <View
-                  style={[
-                    styles.severityBadge,
-                    {
-                      backgroundColor:
-                        getSeverityColor(
-                          fishMoldResult?.severity ||
-                            analysisResult.mold_analysis?.overall_severity ||
-                            "None",
-                        ) + "20",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name="warning-outline"
-                    size={12}
-                    color={getSeverityColor(
-                      fishMoldResult?.severity ||
-                        analysisResult.mold_analysis?.overall_severity ||
-                        "None",
-                    )}
-                  />
-                  <Text
+                  {/* Mold Severity */}
+                  <View
                     style={[
-                      styles.severityText,
+                      styles.severityBadge,
                       {
-                        color: getSeverityColor(
-                          fishMoldResult?.severity ||
-                            analysisResult.mold_analysis?.overall_severity ||
-                            "None",
-                        ),
+                        backgroundColor:
+                          getSeverityColor(
+                            fishMoldResult?.severity ||
+                              analysisResult.mold_analysis?.overall_severity ||
+                              "None",
+                          ) + "20",
                       },
                     ]}
                   >
-                    {fishMoldResult?.severity ||
-                      analysisResult.mold_analysis?.overall_severity ||
-                      "None"}
-                  </Text>
+                    <Text style={styles.detailLabel}>Severity:</Text>
+                    <Text
+                      style={[
+                        styles.severityText,
+                        {
+                          color: getSeverityColor(
+                            fishMoldResult?.severity ||
+                              analysisResult.mold_analysis?.overall_severity ||
+                              "None",
+                          ),
+                        },
+                      ]}
+                    >
+                      {fishMoldResult?.severity ||
+                        analysisResult.mold_analysis?.overall_severity ||
+                        "None"}
+                    </Text>
+                  </View>
                 </View>
-              </View>
+              )}
             </View>
           )}
         </View>
@@ -665,67 +666,92 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 8,
   },
-  detailsCard: {
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  detailsToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: theme.colors.border,
+  },
+  detailsToggleCollapsed: {
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderBottomWidth: 1,
+  },
+  detailsToggleText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.colors.text,
+  },
+  detailsCard: {
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
     borderColor: theme.colors.border,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
   },
   detailRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 10,
   },
   detailLabel: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: "500",
   },
   detailLabelText: {
-    fontSize: 11,
+    fontSize: 13,
     color: theme.colors.textSecondary,
   },
   detailValue: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: "600",
     color: theme.colors.text,
   },
   confidence: {
-    fontSize: 11,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     fontWeight: "400",
   },
   gradeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
   },
   gradeText: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: "700",
   },
   severityBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
   },
   severityText: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: "700",
   },
 });

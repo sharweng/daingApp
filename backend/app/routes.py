@@ -763,7 +763,16 @@ async def analyze_fish(
             "timestamp": now.isoformat(),
             "url": result_url,
             "folder": history_folder,
-            "user_id": user_id
+            "user_id": user_id,
+            # Include analysis data
+            "detections": [
+                {"fish_type": ft, "confidence": conf}
+                for ft, conf in zip(detected_fish_types, detected_confidences)
+            ],
+            "color_analysis": color_analysis,
+            "mold_analysis": mold_analysis,
+            "quality_grade": color_analysis.get("quality_grade") if color_analysis else None,
+            "is_daing_detected": is_daing_detected,
         })
         print(f"📚 History saved: {history_folder}/{history_id}" + (f" (user: {user_id})" if user_id else ""))
         
@@ -853,17 +862,23 @@ async def get_history(authorization: Optional[str] = Header(None)):
     """
     try:
         user_id = None
+        print(f"📋 /history called with auth: {'present' if authorization else 'MISSING'}")
         if authorization:
             token = authorization.replace("Bearer ", "")
             session = validate_session(token)
             if session:
                 user_id = session["user_id"]
+                print(f"✅ Authenticated user: {user_id}")
+            else:
+                print("❌ Invalid session token")
         
         if user_id:
             # Return user's own history from MongoDB
+            print(f"📦 Fetching from MongoDB for user: {user_id}")
             entries = get_user_history_entries(user_id)
         else:
             # Fallback to all history from Cloudinary for unauthenticated users
+            print("⚠️ FALLING BACK TO CLOUDINARY (no auth)")
             entries = fetch_history_from_cloudinary()
         
         return {"status": "success", "entries": entries}

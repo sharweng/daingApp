@@ -29,6 +29,36 @@ import {
   fetchAllHistory,
 } from "../../services/api";
 
+// Helper to get grade color
+const getGradeColor = (grade: string) => {
+  switch (grade) {
+    case "Export":
+      return theme.colors.success;
+    case "Local":
+      return "#F59E0B"; // Amber
+    case "Reject":
+      return theme.colors.error;
+    default:
+      return theme.colors.textSecondary;
+  }
+};
+
+// Helper to get severity color
+const getSeverityColor = (severity: string) => {
+  switch (severity) {
+    case "None":
+      return theme.colors.success;
+    case "Low":
+      return "#F59E0B"; // Amber
+    case "Moderate":
+      return "#F97316"; // Orange
+    case "Severe":
+      return theme.colors.error;
+    default:
+      return theme.colors.textSecondary;
+  }
+};
+
 type HistoryTab = "my" | "all";
 
 interface HistoryScreenProps {
@@ -55,6 +85,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [activeTab, setActiveTab] = useState<HistoryTab>("my");
+  const [detailsExpanded, setDetailsExpanded] = useState(true);
   const flatListRef = useRef<FlatList>(null);
 
   const isAdmin = user?.role === "admin";
@@ -128,6 +159,17 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         data = await fetchAllHistory(serverBaseUrl);
       } else {
         data = await fetchHistory(historyUrl);
+      }
+      // Debug: Log fetched data
+      if (data.length > 0) {
+        console.log("📥 History loaded:", data.length, "entries");
+        console.log("📥 First entry analysis data:", {
+          id: data[0].id,
+          is_daing_detected: data[0].is_daing_detected,
+          detections: data[0].detections?.length || 0,
+          hasColorAnalysis: !!data[0].color_analysis,
+          hasMoldAnalysis: !!data[0].mold_analysis,
+        });
       }
       setEntries(data);
     } catch (error) {
@@ -284,6 +326,29 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const showEmpty = !loading && entries.length === 0;
   const isLoggedIn = !!user;
 
+  // Helper to get color score from analysis data
+  const getColorScore = (entry: HistoryEntry) => {
+    if (entry.color_analysis?.color_stats?.[0]?.combined_std !== undefined) {
+      const score = Math.min(
+        100,
+        Math.max(
+          0,
+          100 *
+            Math.exp(-entry.color_analysis.color_stats[0].combined_std / 35),
+        ),
+      );
+      return score.toFixed(1);
+    }
+    return entry.color_analysis?.consistency_score?.toFixed(1) || "N/A";
+  };
+
+  // Get quality grade from entry
+  const getEntryGrade = (entry: HistoryEntry) => {
+    return (
+      entry.quality_grade || entry.color_analysis?.quality_grade || "Unknown"
+    );
+  };
+
   // If viewing a specific entry, show full-screen view with horizontal swipe
   if (selectedEntry) {
     const formattedTimestamp = new Date(
@@ -293,25 +358,50 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     const screenWidth = Dimensions.get("window").width;
     const screenHeight = Dimensions.get("window").height;
 
-    const renderFullscreenItem = ({ item }: { item: HistoryEntry }) => (
-      <View
-        style={{
-          width: screenWidth,
-          height: screenHeight - 180, // Account for header and bottom bar
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: theme.colors.background,
-        }}
-      >
-        <ZoomableImage
-          uri={item.url}
+    // Check if entry has analysis data
+    // Check if entry has analysis data - be lenient, check detections exist
+    const hasAnalysisData =
+      selectedEntry.is_daing_detected ||
+      (selectedEntry.detections && selectedEntry.detections.length > 0);
+
+    const renderFullscreenItem = ({ item }: { item: HistoryEntry }) => {
+      return (
+        <View
           style={{
             width: screenWidth,
-            height: screenHeight - 180,
+            height: screenHeight - 180, // Account for header and bottom bar
+            backgroundColor: theme.colors.background,
           }}
-        />
-      </View>
-    );
+        >
+          <ZoomableImage
+            uri={item.url}
+            style={{
+              width: screenWidth,
+              height: screenHeight - 180,
+            }}
+          />
+        </View>
+      );
+    };
+
+    // Get current entry's analysis data for the overlay
+    const currentEntry = selectedEntry;
+    const currentHasAnalysis =
+      currentEntry.is_daing_detected ||
+      (currentEntry.detections && currentEntry.detections.length > 0);
+    const currentDetection = currentEntry.detections?.[0];
+    const currentMoldResult = currentEntry.mold_analysis?.fish_results?.[0];
+
+    // Debug: log the selected entry's analysis data
+    console.log("🔍 Selected entry analysis data:", {
+      entryId: currentEntry.id,
+      is_daing_detected: currentEntry.is_daing_detected,
+      detectionsCount: currentEntry.detections?.length || 0,
+      hasColorAnalysis: !!currentEntry.color_analysis,
+      hasMoldAnalysis: !!currentEntry.mold_analysis,
+      currentHasAnalysis,
+      rawEntry: JSON.stringify(currentEntry).substring(0, 500),
+    });
 
     return (
       <View style={commonStyles.container}>
@@ -335,46 +425,168 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <FlatList
-          ref={flatListRef}
-          data={entries}
-          renderItem={renderFullscreenItem}
-          keyExtractor={(item) => item.id}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          initialScrollIndex={currentIndex >= 0 ? currentIndex : 0}
-          getItemLayout={(_, index) => ({
-            length: screenWidth,
-            offset: screenWidth * index,
-            index,
-          })}
-          onScrollToIndexFailed={(info) => {
-            // Handle scroll failure gracefully
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({
-                index: info.index,
-                animated: false,
-              });
-            }, 100);
-          }}
-          onMomentumScrollEnd={(event) => {
-            const newIndex = Math.round(
-              event.nativeEvent.contentOffset.x / screenWidth,
-            );
-            if (
-              entries[newIndex] &&
-              entries[newIndex].id !== selectedEntry?.id
-            ) {
-              setSelectedEntry(entries[newIndex]);
-            }
-          }}
-          style={{ flex: 1 }}
-          contentContainerStyle={{ alignItems: "center" }}
-          snapToInterval={screenWidth}
-          snapToAlignment="start"
-          decelerationRate="fast"
-        />
+        <View style={{ flex: 1, position: "relative" }}>
+          <FlatList
+            ref={flatListRef}
+            data={entries}
+            renderItem={renderFullscreenItem}
+            keyExtractor={(item) => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={currentIndex >= 0 ? currentIndex : 0}
+            getItemLayout={(_, index) => ({
+              length: screenWidth,
+              offset: screenWidth * index,
+              index,
+            })}
+            onScrollToIndexFailed={(info) => {
+              // Handle scroll failure gracefully
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({
+                  index: info.index,
+                  animated: false,
+                });
+              }, 100);
+            }}
+            onMomentumScrollEnd={(event) => {
+              const newIndex = Math.round(
+                event.nativeEvent.contentOffset.x / screenWidth,
+              );
+              if (
+                entries[newIndex] &&
+                entries[newIndex].id !== selectedEntry?.id
+              ) {
+                setSelectedEntry(entries[newIndex]);
+              }
+            }}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ alignItems: "center" }}
+            snapToInterval={screenWidth}
+            snapToAlignment="start"
+            decelerationRate="fast"
+          />
+
+          {/* Analysis Overlay - always show, with fallbacks for missing data */}
+          <View style={styles.detailsOverlay} pointerEvents="box-none">
+            <TouchableOpacity
+              style={[
+                styles.detailsToggle,
+                !detailsExpanded && styles.detailsToggleCollapsed,
+              ]}
+              onPress={() => setDetailsExpanded(!detailsExpanded)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.detailsToggleText}>Analysis Details</Text>
+              <Ionicons
+                name={detailsExpanded ? "chevron-down" : "chevron-up"}
+                size={20}
+                color={theme.colors.text}
+              />
+            </TouchableOpacity>
+
+            {detailsExpanded && (
+              <View style={styles.detailsCard}>
+                {currentHasAnalysis ? (
+                  <>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Type:</Text>
+                      <Text style={styles.detailValue}>
+                        {currentDetection?.fish_type || "Unknown"}{" "}
+                        <Text style={styles.confidence}>
+                          {((currentDetection?.confidence || 0) * 100).toFixed(
+                            0,
+                          )}
+                          %
+                        </Text>
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Color:</Text>
+                      <Text style={styles.detailValue}>
+                        {getColorScore(currentEntry)}%
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.gradeBadge,
+                        {
+                          backgroundColor:
+                            getGradeColor(getEntryGrade(currentEntry)) + "20",
+                        },
+                      ]}
+                    >
+                      <Text style={styles.detailLabel}>Grade:</Text>
+                      <Text
+                        style={[
+                          styles.gradeText,
+                          { color: getGradeColor(getEntryGrade(currentEntry)) },
+                        ]}
+                      >
+                        {getEntryGrade(currentEntry)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Mold:</Text>
+                      <Text style={styles.detailValue}>
+                        {currentMoldResult?.mold_coverage_percent?.toFixed(1) ||
+                          currentEntry.mold_analysis?.avg_coverage_percent?.toFixed(
+                            1,
+                          ) ||
+                          "0.0"}
+                        %
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.severityBadge,
+                        {
+                          backgroundColor:
+                            getSeverityColor(
+                              currentMoldResult?.severity ||
+                                currentEntry.mold_analysis?.overall_severity ||
+                                "None",
+                            ) + "20",
+                        },
+                      ]}
+                    >
+                      <Text style={styles.detailLabel}>Severity:</Text>
+                      <Text
+                        style={[
+                          styles.severityText,
+                          {
+                            color: getSeverityColor(
+                              currentMoldResult?.severity ||
+                                currentEntry.mold_analysis?.overall_severity ||
+                                "None",
+                            ),
+                          },
+                        ]}
+                      >
+                        {currentMoldResult?.severity ||
+                          currentEntry.mold_analysis?.overall_severity ||
+                          "None"}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.noDataRow}>
+                    <Text style={styles.noDataText}>
+                      No analysis data available for this scan.
+                    </Text>
+                    <Text style={styles.noDataHint}>
+                      Re-scan the image to generate analysis.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
 
         <View style={commonStyles.bottomButtonBar}>
           <TouchableOpacity
@@ -736,5 +948,113 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: theme.colors.primary,
+  },
+  // Details Overlay Styles
+  detailsOverlay: {
+    position: "absolute",
+    bottom: 8,
+    left: 12,
+    right: 12,
+    zIndex: 10,
+  },
+  detailsToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: theme.colors.border,
+  },
+  detailsToggleCollapsed: {
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderBottomWidth: 1,
+  },
+  detailsToggleText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.colors.text,
+  },
+  detailsCard: {
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: theme.colors.border,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 10,
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: "500",
+  },
+  detailValue: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: theme.colors.text,
+  },
+  confidence: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: "400",
+  },
+  gradeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  gradeText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  severityBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  severityText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  noDataRow: {
+    width: "100%",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  noDataText: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+  },
+  noDataHint: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    textAlign: "center",
+    marginTop: 4,
   },
 });

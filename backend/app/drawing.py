@@ -9,6 +9,34 @@ import cv2
 import numpy as np
 
 
+def get_label_scale(img_width: int, img_height: int, base_scale: float = 1.0, min_scale: float = 1.0) -> tuple:
+    """
+    Calculate font scale and thickness based on image dimensions.
+    Ensures labels are always readable regardless of image resolution.
+    
+    Args:
+        img_width: Image width in pixels
+        img_height: Image height in pixels
+        base_scale: Base scale factor (default 2.0)
+        min_scale: Minimum font scale (default 1.8)
+        
+    Returns:
+        Tuple of (font_scale, thickness, padding)
+    """
+    # Use the smaller dimension to calculate scale
+    min_dim = min(img_width, img_height)
+    
+    # Scale factor: larger images get bigger labels
+    # Reference: 640px = base_scale, scales up linearly
+    scale_factor = max(min_dim / 640, 1.0)
+    
+    font_scale = max(base_scale * scale_factor, min_scale)
+    thickness = max(int(3 * scale_factor), 3)
+    padding = max(int(12 * scale_factor), 12)
+    
+    return font_scale, thickness, padding
+
+
 def draw_segmentation_results(img: np.ndarray, results, indices: list, model) -> np.ndarray:
     """
     Draw segmentation masks and labels on the image.
@@ -25,6 +53,9 @@ def draw_segmentation_results(img: np.ndarray, results, indices: list, model) ->
     """
     annotated_img = img.copy()
     h, w = img.shape[:2]
+    
+    # Get dynamic label sizing
+    font_scale, thickness, padding = get_label_scale(w, h)
     
     masks = results[0].masks
     boxes = results[0].boxes
@@ -60,7 +91,7 @@ def draw_segmentation_results(img: np.ndarray, results, indices: list, model) ->
             
             # Draw polygon outline
             contours, _ = cv2.findContours(mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            cv2.drawContours(annotated_img, contours, -1, color, 2)
+            cv2.drawContours(annotated_img, contours, -1, color, max(2, thickness // 2))
         
         # Draw label with fish type and confidence
         if boxes is not None and idx < len(boxes):
@@ -69,16 +100,14 @@ def draw_segmentation_results(img: np.ndarray, results, indices: list, model) ->
             fish_type = model.names[int(box.cls[0])]
             confidence = float(box.conf[0])
             
-            # Label background
-            label = f"{fish_type} {confidence:.0%}"
+            # Label background with dynamic sizing
+            label = f"{confidence:.0%}"
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.6
-            thickness = 2
             (label_w, label_h), _ = cv2.getTextSize(label, font, font_scale, thickness)
             
             # Draw label background
-            cv2.rectangle(annotated_img, (x1, y1 - label_h - 10), (x1 + label_w + 10, y1), color, -1)
-            cv2.putText(annotated_img, label, (x1 + 5, y1 - 5), font, font_scale, (255, 255, 255), thickness)
+            cv2.rectangle(annotated_img, (x1, y1 - label_h - padding), (x1 + label_w + padding, y1), color, -1)
+            cv2.putText(annotated_img, label, (x1 + padding // 2, y1 - padding // 2), font, font_scale, (255, 255, 255), thickness)
     
     return annotated_img
 
@@ -97,7 +126,11 @@ def draw_detection_boxes(img: np.ndarray, results, indices: list, model) -> np.n
         Annotated image with bounding boxes
     """
     annotated_img = img.copy()
+    h, w = img.shape[:2]
     boxes = results[0].boxes
+    
+    # Get dynamic label sizing
+    font_scale, thickness, padding = get_label_scale(w, h)
     
     colors = [
         (255, 107, 107),  # Red
@@ -117,19 +150,17 @@ def draw_detection_boxes(img: np.ndarray, results, indices: list, model) -> np.n
             fish_type = model.names[int(box.cls[0])]
             confidence = float(box.conf[0])
             
-            # Draw bounding box
-            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 3)
+            # Draw bounding box with dynamic thickness
+            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, max(3, thickness))
             
-            # Label background
-            label = f"{fish_type} {confidence:.0%}"
+            # Label with dynamic sizing
+            label = f"{confidence:.0%}"
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.7
-            thickness = 2
             (label_w, label_h), _ = cv2.getTextSize(label, font, font_scale, thickness)
             
             # Draw label background
-            cv2.rectangle(annotated_img, (x1, y1 - label_h - 14), (x1 + label_w + 10, y1), color, -1)
-            cv2.putText(annotated_img, label, (x1 + 5, y1 - 7), font, font_scale, (255, 255, 255), thickness)
+            cv2.rectangle(annotated_img, (x1, y1 - label_h - padding), (x1 + label_w + padding, y1), color, -1)
+            cv2.putText(annotated_img, label, (x1 + padding // 2, y1 - padding // 2), font, font_scale, (255, 255, 255), thickness)
     
     return annotated_img
 
@@ -154,6 +185,9 @@ def draw_combined_result_image(img: np.ndarray, results, indices: list, model, c
     """
     annotated_img = img.copy()
     h, w = img.shape[:2]
+    
+    # Get dynamic label sizing
+    font_scale, thickness, padding = get_label_scale(w, h)
     
     boxes = results[0].boxes
     masks = results[0].masks
@@ -180,19 +214,17 @@ def draw_combined_result_image(img: np.ndarray, results, indices: list, model, c
                 fish_type = model.names[int(box.cls[0])]
                 confidence = float(box.conf[0])
                 
-                # Draw bounding box (thicker line)
-                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 4)
+                # Draw bounding box (dynamic thickness)
+                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, max(4, thickness))
                 
-                # Label with fish number for identification
-                label = f"#{i+1} {fish_type} {confidence:.0%}"
+                # Label with fish number for identification (dynamic sizing)
+                label = f"#{i+1} {confidence:.0%}"
                 font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 1.0
-                thickness = 2
                 (label_w, label_h), _ = cv2.getTextSize(label, font, font_scale, thickness)
                 
                 # Draw label background at top of box
-                cv2.rectangle(annotated_img, (x1, y1 - label_h - 16), (x1 + label_w + 12, y1), color, -1)
-                cv2.putText(annotated_img, label, (x1 + 6, y1 - 8), font, font_scale, (255, 255, 255), thickness)
+                cv2.rectangle(annotated_img, (x1, y1 - label_h - padding), (x1 + label_w + padding, y1), color, -1)
+                cv2.putText(annotated_img, label, (x1 + padding // 2, y1 - padding // 2), font, font_scale, (255, 255, 255), thickness)
         
         return annotated_img
     
@@ -227,9 +259,9 @@ def draw_combined_result_image(img: np.ndarray, results, indices: list, model, c
                 colored_mask[mask_binary == 1] = color
                 annotated_img = cv2.addWeighted(annotated_img, 1, colored_mask, 0.3, 0)
                 
-                # Draw polygon outline
+                # Draw polygon outline with dynamic thickness
                 contours, _ = cv2.findContours(mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                cv2.drawContours(annotated_img, contours, -1, color, 2)
+                cv2.drawContours(annotated_img, contours, -1, color, max(2, thickness // 2))
     
     # STEP 2: Draw bounding boxes with labels on top
     for i, idx in enumerate(indices):
@@ -241,19 +273,17 @@ def draw_combined_result_image(img: np.ndarray, results, indices: list, model, c
             fish_type = model.names[int(box.cls[0])]
             confidence = float(box.conf[0])
             
-            # Draw bounding box (thicker line)
-            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 4)
+            # Draw bounding box (dynamic thickness)
+            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, max(4, thickness))
             
-            # Label background - BIGGER FONT
-            label = f"{fish_type} {confidence:.0%}"
+            # Label with dynamic sizing
+            label = f"{confidence:.0%}"
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 1.2  # Increased from 0.7
-            thickness = 3     # Increased from 2
             (label_w, label_h), _ = cv2.getTextSize(label, font, font_scale, thickness)
             
-            # Draw label background at top of box (larger padding)
-            cv2.rectangle(annotated_img, (x1, y1 - label_h - 20), (x1 + label_w + 16, y1), color, -1)
-            cv2.putText(annotated_img, label, (x1 + 8, y1 - 10), font, font_scale, (255, 255, 255), thickness)
+            # Draw label background at top of box
+            cv2.rectangle(annotated_img, (x1, y1 - label_h - padding), (x1 + label_w + padding, y1), color, -1)
+            cv2.putText(annotated_img, label, (x1 + padding // 2, y1 - padding // 2), font, font_scale, (255, 255, 255), thickness)
     
     # STEP 3: Draw mold patches if detected (before overlay)
     if mold_analysis and mold_analysis.get("fish_with_mold", 0) > 0:
