@@ -19,11 +19,43 @@ import { AutoDatasetScreen } from "../components/AutoDatasetScreen";
 import { SettingsModal } from "../components/SettingsModal";
 import { LoginScreen } from "../components/LoginScreen";
 import { RegisterScreen } from "../components/RegisterScreen";
+// Ecommerce screens
+import CatalogScreen from "../components/CatalogScreen";
+import ProductDetailScreen from "../components/ProductDetailScreen";
+import CartScreen from "../components/CartScreen";
+import WishlistScreen from "../components/WishlistScreen";
+import CheckoutScreen from "../components/CheckoutScreen";
+import UserProfileScreen from "../components/UserProfileScreen";
+import UserOrdersScreen from "../components/UserOrdersScreen";
+import OrderDetailScreen from "../components/OrderDetailScreen";
+import OrderSuccessScreen from "../components/OrderSuccessScreen";
+// Seller screens
+import SellerDashboardScreen from "../components/SellerDashboardScreen";
+import SellerProductsScreen from "../components/SellerProductsScreen";
+import SellerProductEditScreen from "../components/SellerProductEditScreen";
+import SellerOrdersScreen from "../components/SellerOrdersScreen";
+import SellerOrderDetailScreen from "../components/SellerOrderDetailScreen";
+import SellerReviewsScreen from "../components/SellerReviewsScreen";
+// Admin screens
+import AdminDashboardScreen from "../components/AdminDashboardScreen";
+import AdminUsersScreen from "../components/AdminUsersScreen";
+import AdminOrdersScreen from "../components/AdminOrdersScreen";
+import AdminVouchersScreen from "../components/AdminVouchersScreen";
+import AdminPostsScreen from "../components/AdminPostsScreen";
+import AdminScansScreen from "../components/AdminScansScreen";
+import AdminAuditLogsScreen from "../components/AdminAuditLogsScreen";
+// Community screens
+import CommunityScreen from "../components/CommunityScreen";
 import { takePicture } from "../utils/camera";
 import { analyzeFish, fetchHistory } from "../services/api";
 import { DEFAULT_SERVER_BASE_URL, getServerUrls } from "../constants/config";
 import { useAuth } from "../contexts/AuthContext";
-import type { Screen, HistoryEntry, AnalysisScanResult } from "../types";
+import type {
+  Screen,
+  HistoryEntry,
+  AnalysisScanResult,
+  NavigationParams,
+} from "../types";
 
 export default function Index() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -44,6 +76,8 @@ export default function Index() {
 
   // Navigation & Settings
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
+  const [navParams, setNavParams] = useState<NavigationParams>({});
+  const [screenHistory, setScreenHistory] = useState<Screen[]>(["home"]);
   const [showSettings, setShowSettings] = useState(false);
   const [autoSaveDataset, setAutoSaveDataset] = useState(false);
   const [serverBaseUrl, setServerBaseUrl] = useState(DEFAULT_SERVER_BASE_URL);
@@ -214,6 +248,24 @@ export default function Index() {
     setCurrentScreen("history");
   };
 
+  // Navigation helpers
+  const navigate = (screen: Screen, params?: NavigationParams) => {
+    setScreenHistory((prev) => [...prev, currentScreen]);
+    setNavParams(params || {});
+    setCurrentScreen(screen);
+  };
+
+  const goBack = () => {
+    if (screenHistory.length > 0) {
+      const prevScreen = screenHistory[screenHistory.length - 1];
+      setScreenHistory((prev) => prev.slice(0, -1));
+      setNavParams({});
+      setCurrentScreen(prevScreen);
+    } else {
+      setCurrentScreen("home");
+    }
+  };
+
   // ============================================
   // RENDER SCREENS
   // ============================================
@@ -240,7 +292,7 @@ export default function Index() {
     return (
       <>
         <HomeScreen
-          onNavigate={setCurrentScreen}
+          onNavigate={navigate}
           onOpenSettings={() => setShowSettings(true)}
           autoSaveDataset={autoSaveDataset}
           user={user}
@@ -297,6 +349,156 @@ export default function Index() {
         autoDatasetUrl={serverUrls.autoDataset}
       />
     );
+  }
+
+  // ============================================
+  // ECOMMERCE SCREENS
+  // ============================================
+
+  if (currentScreen === "catalog") {
+    return <CatalogScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "productDetail") {
+    return (
+      <ProductDetailScreen
+        productId={navParams.productId || ""}
+        onNavigate={navigate}
+        onBack={goBack}
+      />
+    );
+  }
+
+  if (currentScreen === "cart") {
+    return <CartScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "wishlist") {
+    return <WishlistScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "checkout") {
+    return <CheckoutScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  // ============================================
+  // USER SCREENS
+  // ============================================
+
+  if (currentScreen === "userProfile") {
+    return <UserProfileScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "userOrders") {
+    return <UserOrdersScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  // ============================================
+  // SELLER SCREENS
+  // ============================================
+
+  if (currentScreen === "sellerDashboard") {
+    return <SellerDashboardScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  // ============================================
+  // COMMUNITY SCREENS
+  // ============================================
+
+  if (currentScreen === "community") {
+    return <CommunityScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  // ============================================
+  // ORDER DETAIL SCREENS
+  // ============================================
+
+  if (currentScreen === "orderDetail") {
+    return (
+      <OrderDetailScreen
+        orderId={navParams.orderId || ""}
+        onNavigate={navigate}
+        onBack={goBack}
+      />
+    );
+  }
+
+  if (currentScreen === "orderSuccess") {
+    return (
+      <OrderSuccessScreen
+        orderId={navParams.orderId || ""}
+        orderNumber={navParams.orderNumber}
+        onNavigate={navigate}
+      />
+    );
+  }
+
+  // ============================================
+  // SELLER ADDITIONAL SCREENS
+  // ============================================
+
+  if (currentScreen === "sellerProducts") {
+    return <SellerProductsScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "sellerProductEdit") {
+    return (
+      <SellerProductEditScreen
+        productId={navParams.productId}
+        onNavigate={navigate}
+        onBack={goBack}
+      />
+    );
+  }
+
+  if (currentScreen === "sellerOrders") {
+    return <SellerOrdersScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "sellerOrderDetail") {
+    return (
+      <SellerOrderDetailScreen
+        orderId={navParams.orderId || ""}
+        onNavigate={navigate}
+        onBack={goBack}
+      />
+    );
+  }
+
+  if (currentScreen === "sellerReviews") {
+    return <SellerReviewsScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  // ============================================
+  // ADMIN SCREENS
+  // ============================================
+
+  if (currentScreen === "adminDashboard") {
+    return <AdminDashboardScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminUsers") {
+    return <AdminUsersScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminOrders") {
+    return <AdminOrdersScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminVouchers") {
+    return <AdminVouchersScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminPosts") {
+    return <AdminPostsScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminScans") {
+    return <AdminScansScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminAuditLogs") {
+    return <AdminAuditLogsScreen onNavigate={navigate} onBack={goBack} />;
   }
 
   // SCAN SCREEN

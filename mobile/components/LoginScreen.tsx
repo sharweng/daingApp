@@ -35,36 +35,52 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   // Manual Google OAuth flow using WebBrowser
   const handleGoogleSignIn = async () => {
+    // Check if Google Client ID is configured
+    const clientId = GOOGLE_CLIENT_ID?.webClientId;
+    if (!clientId || clientId.includes("your-web-client-id")) {
+      Alert.alert(
+        "Configuration Required",
+        "Google Sign-In is not configured. Please set up the Web Client ID in config.ts",
+      );
+      return;
+    }
+
     setGoogleLoading(true);
-    
+
     try {
       // Build Google OAuth URL
       const redirectUri = "https://auth.expo.io/@marbe/daingapp"; // Expo redirect URI
       const scope = encodeURIComponent("openid email profile");
       const responseType = "token";
-      const clientId = GOOGLE_CLIENT_ID.webClientId;
-      
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+
+      const authUrl =
+        `https://accounts.google.com/o/oauth2/v2/auth?` +
         `client_id=${clientId}&` +
         `redirect_uri=${encodeURIComponent(redirectUri)}&` +
         `response_type=${responseType}&` +
         `scope=${scope}`;
-      
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-      
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        redirectUri,
+      );
+
       if (result.type === "success" && result.url) {
         // Parse access token from URL fragment
         const urlParams = result.url.split("#")[1];
         if (urlParams) {
           const params = new URLSearchParams(urlParams);
           const accessToken = params.get("access_token");
-          
+
           if (accessToken) {
             const response = await googleLogin(serverBaseUrl, accessToken);
             if (response.status === "success") {
               onNavigate("home");
             } else {
-              Alert.alert("Google Sign-In Failed", response.message || "Please try again");
+              Alert.alert(
+                "Google Sign-In Failed",
+                response.message || "Please try again",
+              );
             }
           } else {
             Alert.alert("Error", "Failed to get access token from Google");
@@ -191,7 +207,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </View>
 
           <TouchableOpacity
-            style={[styles.googleButton, googleLoading && styles.buttonDisabled]}
+            style={[
+              styles.googleButton,
+              googleLoading && styles.buttonDisabled,
+            ]}
             onPress={handleGoogleSignIn}
             disabled={googleLoading}
           >
@@ -200,7 +219,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             ) : (
               <>
                 <Ionicons name="logo-google" size={20} color="#DB4437" />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
+                <Text style={styles.googleButtonText}>
+                  Continue with Google
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -308,7 +329,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff",
+    backgroundColor: "#1E293B",
     borderRadius: 12,
     height: 50,
     marginBottom: 16,
@@ -317,7 +338,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   googleButtonText: {
-    color: "#333",
+    color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },

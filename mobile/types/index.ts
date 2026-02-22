@@ -5,7 +5,52 @@ export type Screen =
   | "history"
   | "autoDataset"
   | "login"
-  | "register";
+  | "register"
+  // Ecommerce screens
+  | "catalog"
+  | "productDetail"
+  | "wishlist"
+  | "cart"
+  | "checkout"
+  | "orderSuccess"
+  // User screens
+  | "userProfile"
+  | "userOrders"
+  | "orderDetail"
+  | "userActivity"
+  // Seller screens
+  | "sellerDashboard"
+  | "sellerProducts"
+  | "sellerProductEdit"
+  | "sellerOrders"
+  | "sellerOrderDetail"
+  | "sellerReviews"
+  | "sellerDiscounts"
+  | "sellerDiscountEdit"
+  // Admin screens
+  | "adminDashboard"
+  | "adminUsers"
+  | "adminUserDetail"
+  | "adminPosts"
+  | "adminPostDetail"
+  | "adminScans"
+  | "adminAuditLogs"
+  | "adminOrders"
+  | "adminOrderDetail"
+  | "adminVouchers"
+  | "adminMarket"
+  | "adminProductDetail"
+  // Community screens
+  | "community"
+  | "communityPostDetail"
+  | "communityCreate"
+  | "myPosts"
+  // Seller store (public)
+  | "sellerStore"
+  // Other
+  | "contact"
+  | "about"
+  | "publications";
 
 export type UserRole = "user" | "admin" | "seller";
 
@@ -14,6 +59,9 @@ export interface User {
   username: string;
   email: string;
   role: UserRole;
+  avatar?: string;
+  bio?: string;
+  joined_at?: string;
 }
 
 export interface AuthState {
@@ -207,4 +255,314 @@ export interface AnalyticsSummary {
   mold_analysis?: MoldAnalyticsStats;
   defect_patterns?: DefectPatterns;
   quality_classification?: QualityClassification;
+}
+
+// ========== ECOMMERCE TYPES ==========
+
+// Product types
+export interface ProductCategory {
+  id: string;
+  name: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductImage {
+  url: string;
+  public_id?: string;
+  uploaded_at?: string;
+}
+
+export interface SellerProduct {
+  id: string;
+  seller_id: string;
+  seller_name: string;
+  name: string;
+  description?: string;
+  price: number;
+  category_id?: string | null;
+  category_name?: string;
+  stock_qty: number;
+  status: string;
+  images: ProductImage[];
+  main_image_index: number;
+  is_disabled: boolean;
+  sold_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductReview {
+  id: string;
+  product_id: string;
+  seller_id: string;
+  user_id: string;
+  user_name: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Cart types
+export interface CartItem {
+  product: SellerProduct;
+  qty: number;
+}
+
+// Order types
+export interface OrderAddress {
+  full_name: string;
+  phone: string;
+  address_line: string;
+  city: string;
+  province: string;
+  postal_code: string;
+  notes?: string;
+}
+
+export interface OrderItem {
+  product_id: string;
+  seller_id?: string;
+  seller_name?: string;
+  name: string;
+  price: number;
+  qty: number;
+  image_url?: string;
+}
+
+export interface OrderDetail {
+  id: string;
+  order_number: string;
+  seller_id?: string;
+  seller_name?: string;
+  status: string;
+  total: number;
+  total_items: number;
+  payment_method: string;
+  address: OrderAddress;
+  items: OrderItem[];
+  created_at: string;
+}
+
+// Community types
+export interface CommunityPost {
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  category: string;
+  author_id: string;
+  author_name: string;
+  author_avatar: string;
+  likes: number;
+  liked_by: string[];
+  comments_count: number;
+  shares: number;
+  created_at: string;
+}
+
+export interface MyCommunityPost {
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  category: string;
+  author_id: string;
+  author_name: string;
+  likes: number;
+  comments_count: number;
+  created_at: string;
+  status: "published" | "draft" | "deleted";
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  author_name: string;
+  text: string;
+  created_at: string;
+}
+
+// ========== SELLER TYPES ==========
+
+export interface SellerProfile {
+  id: string;
+  name: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  joined_at?: string | null;
+  product_count: number;
+  total_sold: number;
+  avg_rating?: number | null;
+  total_reviews: number;
+}
+
+export interface SellerKPIs {
+  total_products: number;
+  total_orders: number;
+  total_earnings: number;
+  average_rating: number;
+  products_change: number;
+  orders_change: number;
+  earnings_change: number;
+  rating_change: number;
+}
+
+export interface SellerReview {
+  id: string;
+  user_name: string;
+  rating: number;
+  comment: string;
+  product_name: string;
+  created_at: string;
+}
+
+export interface RecentOrder {
+  id: string;
+  order_number: string;
+  customer: string;
+  total: number;
+  status: string;
+  created_at: string;
+  items_count?: number;
+}
+
+export interface TopProduct {
+  id: string;
+  name: string;
+  sold: number;
+  price: number;
+  stock: number;
+  category_name?: string;
+}
+
+export interface SalesCategory {
+  category: string;
+  sold: number;
+  percentage: number;
+}
+
+// ========== ADMIN TYPES ==========
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "seller" | "user";
+  status: "active" | "inactive";
+  avatar: string;
+  joined_at: string;
+  orders_count: number;
+  products_count: number;
+  deactivation_reason: string;
+  isActive: boolean; // Computed from status === "active"
+}
+
+export interface AdminUserDetail extends AdminUser {
+  deactivated_at: string;
+  reactivated_at: string;
+  scans_count: number;
+}
+
+export interface AdminUsersStats {
+  total: number;
+  admins: number;
+  sellers: number;
+  users: number;
+  active: number;
+  inactive: number;
+}
+
+export interface AdminPost {
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  category: string;
+  author_id: string;
+  author_name: string;
+  author_avatar: string;
+  likes: number;
+  comments_count: number;
+  status: "active" | "deleted" | "disabled";
+  created_at: string;
+  updated_at: string;
+  disable_reason: string;
+}
+
+export interface AdminOrder {
+  id: string;
+  order_number: string;
+  buyer_name: string;
+  buyer_id: string;
+  seller_name: string;
+  seller_id: string;
+  category: string;
+  status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+  total: number;
+  total_items: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminOrderDetail extends AdminOrder {
+  items: OrderItem[];
+  address: OrderAddress;
+  payment_method: string;
+}
+
+export interface AdminScanEntry {
+  id: string;
+  timestamp: string;
+  url?: string | null;
+  fish_type: string;
+  grade: string;
+  score: number | null;
+  user_name: string;
+  user_id?: string | null;
+  detected: boolean;
+  is_disabled?: boolean;
+}
+
+export interface AdminAuditLogEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  role: string;
+  action: string;
+  category: string;
+  entity: string;
+  entity_id: string;
+  status: string;
+  ip: string;
+  details: string;
+}
+
+// Voucher types
+export interface Voucher {
+  id: string;
+  code: string;
+  discount_type: "fixed" | "percentage";
+  value: number;
+  seller_id?: string;
+  expiration_date?: string | null;
+  max_uses?: number | null;
+  per_user_limit?: number | null;
+  min_order_amount?: number | null;
+  used_count: number;
+  active: boolean;
+  created_at: string;
+}
+
+// Navigation params
+export interface NavigationParams {
+  productId?: string;
+  orderId?: string;
+  postId?: string;
+  userId?: string;
+  sellerId?: string;
+  voucherId?: string;
 }

@@ -113,12 +113,47 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     
     # Try JWT/Firebase auth (web)
     try:
-        from .auth import get_current_user_web, security
-        from fastapi.security import HTTPAuthorizationCredentials
+        from .auth import _init_firebase_admin, _verify_firebase_token, JWT_SECRET, JWT_ALGORITHM
+        from jose import jwt as jose_jwt, JWTError
+        from bson import ObjectId
         
-        # Create mock credentials object
-        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        user = await get_current_user_web.__wrapped__(creds)
+        db = get_db()
+        user = None
+        
+        # Try Firebase auth first
+        if _init_firebase_admin():
+            try:
+                decoded = _verify_firebase_token(token)
+                firebase_uid = decoded.get("uid")
+                email = (decoded.get("email") or "").strip().lower()
+                
+                if firebase_uid:
+                    user = db["users"].find_one({"firebase_uid": firebase_uid})
+                if not user and email:
+                    user = db["users"].find_one({"email": email})
+                
+                if user:
+                    # Update firebase_uid if needed
+                    updates = {}
+                    if firebase_uid and user.get("firebase_uid") != firebase_uid:
+                        updates["firebase_uid"] = firebase_uid
+                    if "email_verified" in decoded:
+                        updates["email_verified"] = bool(decoded.get("email_verified"))
+                    if updates:
+                        db["users"].update_one({"_id": user["_id"]}, {"$set": updates})
+                        user = db["users"].find_one({"_id": user["_id"]})
+            except:
+                pass  # Fall through to JWT auth
+        
+        # Fall back to JWT auth if no user found
+        if not user:
+            try:
+                payload = jose_jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                user_id = payload.get("sub")
+                if user_id:
+                    user = db["users"].find_one({"_id": ObjectId(user_id)})
+            except:
+                pass
         
         if user:
             uid = str(user["_id"])
@@ -265,6 +300,134 @@ async def register_firebase(body: RegisterFirebaseBody, authorization: Optional[
         "gender": doc.get("gender") or "",
         "role": (doc.get("role") or "user").strip().lower(),
         "email_verified": bool(doc.get("email_verified")),
+    }
+
+
+# ============================================
+# GOOGLE SIGN-IN (Mobile OAuth)
+# ============================================
+
+class GoogleSignInBody(BaseModel):
+    access_token: Optional[str] = None
+    id_token: Optional[str] = None
+
+@router.post("/auth/google-signin")
+async def google_signin(body: GoogleSignInBody):
+    """
+    Google Sign-In for mobile app.
+    Accepts Google OAuth access_token or id_token, verifies with Google, and creates/logs in user.
+    """
+    import httpx
+    from datetime import datetime
+    from .auth import create_jwt_token
+    
+    access_token = (body.access_token or "").strip()
+    id_token = (body.id_token or "").strip()
+    
+    if not access_token and not id_token:
+        raise HTTPException(status_code=400, detail="access_token or id_token required")
+    
+    user_info = None
+    
+    # Verify token with Google
+    try:
+        async with httpx.AsyncClient() as client:
+            if access_token:
+                # Verify access token and get user info
+                resp = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=10.0
+                )
+                if resp.status_code == 200:
+                    user_info = resp.json()
+            
+            if not user_info and id_token:
+                # Verify ID token
+                resp = await client.get(
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}",
+                    timeout=10.0
+                )
+                if resp.status_code == 200:
+                    user_info = resp.json()
+    except Exception as e:
+        print(f"Google verification error: {e}")
+        raise HTTPException(status_code=401, detail="Failed to verify Google token")
+    
+    if not user_info:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+    
+    # Extract user info
+    email = (user_info.get("email") or "").strip().lower()
+    name = user_info.get("name") or user_info.get("given_name") or email.split("@")[0]
+    picture = user_info.get("picture")
+    google_id = user_info.get("sub")
+    email_verified = user_info.get("email_verified", False)
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not provided by Google")
+    
+    db = get_db()
+    users = db["users"]
+    
+    # Find or create user
+    existing = users.find_one({"email": email})
+    
+    if existing:
+        # Update Google info if needed
+        updates = {"email_verified": True}
+        if google_id and not existing.get("google_id"):
+            updates["google_id"] = google_id
+        if picture and not existing.get("avatar_url"):
+            updates["avatar_url"] = picture
+        
+        users.update_one({"_id": existing["_id"]}, {"$set": updates})
+        existing = users.find_one({"_id": existing["_id"]})
+        user_id = str(existing["_id"])
+    else:
+        # Create new user
+        doc = {
+            "name": name,
+            "full_name": name,
+            "email": email,
+            "google_id": google_id,
+            "avatar_url": picture,
+            "email_verified": True,
+            "phone": "",
+            "city": "",
+            "street_address": "",
+            "province": "",
+            "postal_code": "",
+            "gender": "",
+            "role": "user",
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        result = users.insert_one(doc)
+        user_id = str(result.inserted_id)
+        existing = doc
+        existing["_id"] = result.inserted_id
+    
+    # Generate JWT token for the user
+    token = create_jwt_token(user_id, email)
+    
+    return {
+        "status": "success",
+        "token": token,
+        "user": {
+            "id": user_id,
+            "name": existing.get("name") or "",
+            "full_name": existing.get("full_name") or existing.get("name") or "",
+            "email": existing.get("email") or "",
+            "avatar_url": existing.get("avatar_url") or picture or None,
+            "phone": existing.get("phone") or "",
+            "city": existing.get("city") or "",
+            "street_address": existing.get("street_address") or "",
+            "province": existing.get("province") or "",
+            "postal_code": existing.get("postal_code") or "",
+            "gender": existing.get("gender") or "",
+            "role": (existing.get("role") or "user").strip().lower(),
+            "email_verified": True,
+        }
     }
 
 

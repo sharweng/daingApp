@@ -18,3 +18,5 @@ email-validator
 reportlab
 # HTTP requests for payment APIs
 requests
+# Async HTTP client (Google OAuth verification)
+httpx

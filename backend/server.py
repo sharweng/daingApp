@@ -33,6 +33,7 @@ from app.model import load_model
 from app.routes import router
 from app.contact import router as contact_router
 from app.payment import router as payment_router
+from app.ecommerce import router as ecommerce_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -66,6 +67,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(contact_router, tags=["contact"])
 app.include_router(payment_router, tags=["payment"])
+app.include_router(ecommerce_router, tags=["ecommerce"])
 
 # Dataset directory
 DATASET_DIR = Path("dataset")

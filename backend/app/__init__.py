@@ -14,6 +14,7 @@ Modules:
 - routes: API route handlers
 - contact: Contact form handling
 - payment: Payment processing
+- ecommerce: Product catalog, cart, wishlist, orders
 - email_sender: Email notifications
 - order_receipt: Order receipt generation
 """

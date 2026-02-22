@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
+import { useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 
 /**
  * Google OAuth Callback Page
@@ -15,12 +15,12 @@ export default function GoogleCallbackPage() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      const token = searchParams.get('token');
-      const error = searchParams.get('error');
+      const token = searchParams.get("token");
+      const error = searchParams.get("error");
 
       if (error) {
         showToast(`Google sign-in failed: ${error}`);
-        navigate('/login', { replace: true });
+        navigate("/login", { replace: true });
         return;
       }
 
@@ -28,16 +28,16 @@ export default function GoogleCallbackPage() {
         try {
           // Store the token and redirect to home
           login(token);
-          showToast('Successfully signed in with Google!');
-          navigate('/', { replace: true });
+          showToast("Successfully signed in with Google!");
+          navigate("/", { replace: true });
         } catch (err) {
-          console.error('Error processing Google callback:', err);
-          showToast('Failed to complete sign-in. Please try again.');
-          navigate('/login', { replace: true });
+          console.error("Error processing Google callback:", err);
+          showToast("Failed to complete sign-in. Please try again.");
+          navigate("/login", { replace: true });
         }
       } else {
         // No token or error - redirect to login
-        navigate('/login', { replace: true });
+        navigate("/login", { replace: true });
       }
     };
 
