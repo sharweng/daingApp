@@ -10,10 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { Screen, AdminUsersStats } from "../../types";
-import {
-  getAdminUsersStatsSimple,
-  getAdminRecentOrders,
-} from "../../services/api";
+import { getAdminUsersStatsSimple } from "../../services/api";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -22,13 +19,10 @@ interface Props {
 
 interface DashboardData {
   userStats?: AdminUsersStats;
-  recentOrders: any[];
 }
 
 export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
-  const [data, setData] = useState<DashboardData>({
-    recentOrders: [],
-  });
+  const [data, setData] = useState<DashboardData>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -39,11 +33,8 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [userStats, recentOrders] = await Promise.all([
-        getAdminUsersStatsSimple(),
-        getAdminRecentOrders(),
-      ]);
-      setData({ userStats: userStats || undefined, recentOrders });
+      const userStats = await getAdminUsersStatsSimple();
+      setData({ userStats: userStats || undefined });
     } catch (err) {
       console.error("Failed to load admin data:", err);
     } finally {
@@ -78,6 +69,13 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
       label: "Posts",
       color: "#8B5CF6",
       desc: "Community",
+    },
+    {
+      id: "adminScans",
+      icon: "scan",
+      label: "Scans",
+      color: "#F59E0B",
+      desc: "Scan history",
     },
     {
       id: "adminVouchers",
@@ -182,32 +180,6 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
             </Text>
             <Text style={{ fontSize: 14, color: "#94A3B8" }}>Sellers</Text>
           </View>
-          <View
-            style={{
-              flex: 1,
-              minWidth: "45%",
-              backgroundColor: "#3D1E1E",
-              borderRadius: 12,
-              padding: 16,
-              borderWidth: 1,
-              borderColor: "#EF4444",
-            }}
-          >
-            <Ionicons name="receipt" size={24} color="#EF4444" />
-            <Text
-              style={{
-                fontSize: 24,
-                fontWeight: "bold",
-                color: "#FFFFFF",
-                marginTop: 8,
-              }}
-            >
-              {data.recentOrders?.length || 0}
-            </Text>
-            <Text style={{ fontSize: 14, color: "#94A3B8" }}>
-              Recent Orders
-            </Text>
-          </View>
         </View>
 
         {/* Quick Menu */}
@@ -266,49 +238,6 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
             </TouchableOpacity>
           ))}
         </View>
-
-        {/* Recent Activity */}
-        <Text
-          style={{
-            fontSize: 18,
-            fontWeight: "bold",
-            color: "#FFFFFF",
-            marginTop: 24,
-            marginBottom: 12,
-          }}
-        >
-          Recent Activity
-        </Text>
-        {data.recentOrders.slice(0, 3).map((order, idx) => (
-          <View
-            key={idx}
-            style={{
-              backgroundColor: "#1E293B",
-              borderRadius: 12,
-              padding: 16,
-              marginBottom: 8,
-              flexDirection: "row",
-              alignItems: "center",
-            }}
-          >
-            <Ionicons name="receipt-outline" size={24} color="#3B82F6" />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text
-                style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}
-              >
-                Order #{order.orderNumber || order.id?.slice(-6)}
-              </Text>
-              <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-                {order.customer || order.email}
-              </Text>
-            </View>
-            <Text
-              style={{ fontSize: 14, fontWeight: "bold", color: "#10B981" }}
-            >
-              ₱{(order.total || 0).toLocaleString()}
-            </Text>
-          </View>
-        ))}
       </ScrollView>
     </View>
   );

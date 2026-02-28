@@ -12,7 +12,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { theme } from "../../styles/theme";
 import { OrderDetail, Screen } from "../../types";
-import { getOrderById, cancelOrder } from "../../services/api";
+import {
+  getOrderById,
+  cancelOrder,
+  markOrderDelivered,
+} from "../../services/api";
 import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
@@ -25,7 +29,6 @@ interface Props {
 const statusColors: Record<string, string> = {
   pending: "#F59E0B",
   confirmed: "#3B82F6",
-  preparing: "#8B5CF6",
   shipped: "#06B6D4",
   delivered: "#10B981",
   cancelled: "#EF4444",
@@ -34,7 +37,6 @@ const statusColors: Record<string, string> = {
 const statusIcons: Record<string, string> = {
   pending: "time",
   confirmed: "checkmark-circle",
-  preparing: "cube",
   shipped: "car",
   delivered: "checkmark-done-circle",
   cancelled: "close-circle",
@@ -49,6 +51,7 @@ export default function OrderDetailScreen({
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [markingDelivered, setMarkingDelivered] = useState(false);
 
   useEffect(() => {
     loadOrder();
@@ -93,6 +96,36 @@ export default function OrderDetailScreen({
         },
       },
     ]);
+  };
+
+  const handleMarkDelivered = () => {
+    if (!order) return;
+    Alert.alert(
+      "Mark as Delivered",
+      "Confirm that you have received this order?",
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Received",
+          onPress: async () => {
+            try {
+              setMarkingDelivered(true);
+              const result = await markOrderDelivered(serverBaseUrl, order.id);
+              if (result.success) {
+                await loadOrder();
+                Alert.alert("Success", "Order marked as delivered");
+              } else {
+                Alert.alert("Error", "Failed to mark order as delivered");
+              }
+            } catch (err) {
+              Alert.alert("Error", "Failed to mark order as delivered");
+            } finally {
+              setMarkingDelivered(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -387,6 +420,31 @@ export default function OrderDetailScreen({
                 style={{ fontSize: 16, fontWeight: "600", color: "#EF4444" }}
               >
                 Cancel Order
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* Mark as Delivered Button - only for shipped orders */}
+        {order.status === "shipped" && (
+          <TouchableOpacity
+            style={{
+              backgroundColor: "#D1FAE5",
+              borderRadius: 12,
+              padding: 16,
+              alignItems: "center",
+              marginBottom: 24,
+            }}
+            onPress={handleMarkDelivered}
+            disabled={markingDelivered}
+          >
+            {markingDelivered ? (
+              <ActivityIndicator color="#10B981" />
+            ) : (
+              <Text
+                style={{ fontSize: 16, fontWeight: "600", color: "#10B981" }}
+              >
+                Mark as Delivered
               </Text>
             )}
           </TouchableOpacity>

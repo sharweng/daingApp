@@ -17,6 +17,7 @@ import {
   deleteAdminPost,
   togglePostVisibility,
 } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -27,6 +28,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   useEffect(() => {
     loadPosts();
@@ -35,8 +37,8 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
   const loadPosts = async () => {
     try {
       setLoading(true);
-      const data = await getAdminPosts();
-      setPosts(data);
+      const data = await getAdminPosts(API_BASE_URL);
+      setPosts(data.posts || []);
     } catch (err) {
       console.error("Failed to load posts:", err);
     } finally {
@@ -58,7 +60,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteAdminPost(post.id);
+            await deleteAdminPost(API_BASE_URL, post.id);
             await loadPosts();
             Alert.alert("Success", "Post deleted");
           } catch (err) {
@@ -71,12 +73,23 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
 
   const handleToggleVisibility = async (post: AdminPost) => {
     try {
-      await togglePostVisibility(post.id, !post.isVisible);
+      await togglePostVisibility(
+        API_BASE_URL,
+        post.id,
+        post.status !== "active",
+      );
       await loadPosts();
     } catch (err) {
       Alert.alert("Error", "Failed to update post");
     }
   };
+
+  const filteredPosts = posts.filter((p) => {
+    if (statusFilter === "all") return true;
+    if (statusFilter === "active") return p.status === "active";
+    if (statusFilter === "hidden") return p.status !== "active";
+    return true;
+  });
 
   const renderPost = useCallback(
     ({ item }: { item: AdminPost }) => (
@@ -91,7 +104,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           shadowOpacity: 0.05,
           shadowRadius: 2,
           elevation: 1,
-          opacity: item.isVisible ? 1 : 0.6,
+          opacity: item.status === "active" ? 1 : 0.6,
         }}
       >
         <View style={{ flexDirection: "row", marginBottom: 12 }}>
@@ -109,18 +122,18 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
             <Text
               style={{ fontSize: 14, fontWeight: "bold", color: "#94A3B8" }}
             >
-              {(item.authorName || "U").charAt(0).toUpperCase()}
+              {(item.author_name || "U").charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
-              {item.authorName}
+              {item.author_name}
             </Text>
             <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-              {item.authorEmail}
+              {item.category}
             </Text>
           </View>
-          {!item.isVisible && (
+          {item.status !== "active" && (
             <View
               style={{
                 backgroundColor: "#FEE2E2",
@@ -138,12 +151,12 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           style={{ fontSize: 14, color: "#94A3B8", marginBottom: 8 }}
           numberOfLines={3}
         >
-          {item.content}
+          {item.description}
         </Text>
 
-        {item.image && (
+        {item.images && item.images.length > 0 && (
           <Image
-            source={{ uri: item.image }}
+            source={{ uri: item.images[0] }}
             style={{
               width: "100%",
               height: 150,
@@ -169,7 +182,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           >
             <Ionicons name="heart" size={16} color="#EF4444" />
             <Text style={{ fontSize: 12, color: "#94A3B8", marginLeft: 4 }}>
-              {item.likeCount}
+              {item.likes}
             </Text>
           </View>
           <View
@@ -181,11 +194,11 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           >
             <Ionicons name="chatbubble" size={16} color="#3B82F6" />
             <Text style={{ fontSize: 12, color: "#94A3B8", marginLeft: 4 }}>
-              {item.commentCount}
+              {item.comments_count}
             </Text>
           </View>
           <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-            {new Date(item.createdAt).toLocaleDateString()}
+            {new Date(item.created_at).toLocaleDateString()}
           </Text>
         </View>
 
@@ -193,7 +206,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           <TouchableOpacity
             style={{
               flex: 1,
-              backgroundColor: item.isVisible ? "#FEF3C7" : "#D1FAE5",
+              backgroundColor: item.status === "active" ? "#FEF3C7" : "#D1FAE5",
               borderRadius: 8,
               paddingVertical: 8,
               alignItems: "center",
@@ -202,11 +215,11 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           >
             <Text
               style={{
-                color: item.isVisible ? "#F59E0B" : "#10B981",
+                color: item.status === "active" ? "#F59E0B" : "#10B981",
                 fontWeight: "600",
               }}
             >
-              {item.isVisible ? "Hide" : "Show"}
+              {item.status === "active" ? "Hide" : "Show"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -237,24 +250,59 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
         <View style={ecommerceStyles.backButton} />
       </View>
 
+      {/* Filter Tabs */}
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {(["all", "active", "hidden"] as const).map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 20,
+                backgroundColor:
+                  statusFilter === filter
+                    ? filter === "active"
+                      ? "#10B981"
+                      : filter === "hidden"
+                        ? "#EF4444"
+                        : "#3B82F6"
+                    : "#334155",
+              }}
+              onPress={() => setStatusFilter(filter)}
+            >
+              <Text
+                style={{
+                  color: statusFilter === filter ? "#fff" : "#94A3B8",
+                  fontWeight: "500",
+                  textTransform: "capitalize",
+                }}
+              >
+                {filter}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {loading ? (
         <View
           style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
         >
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
-      ) : posts.length === 0 ? (
+      ) : filteredPosts.length === 0 ? (
         <View
           style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
         >
           <Ionicons name="newspaper-outline" size={64} color="#CBD5E1" />
           <Text style={{ fontSize: 16, color: "#94A3B8", marginTop: 16 }}>
-            No posts yet
+            No {statusFilter === "all" ? "posts" : statusFilter} posts
           </Text>
         </View>
       ) : (
         <FlatList
-          data={posts}
+          data={filteredPosts}
           keyExtractor={(item) => item.id}
           renderItem={renderPost}
           contentContainerStyle={{ padding: 16 }}

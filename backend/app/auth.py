@@ -290,6 +290,10 @@ def login_user(username: str, password: str) -> Dict[str, Any]:
         if not user:
             return {"status": "error", "message": "Invalid username or password"}
         
+        # Check if user is inactive
+        if user.get("status") == "inactive":
+            return {"status": "error", "message": "Your account has been deactivated. Please contact support."}
+        
         # Verify password
         if not verify_password(password, user.get("password_hash", "")):
             return {"status": "error", "message": "Invalid username or password"}
@@ -664,6 +668,10 @@ def login_user_web(body: LoginBody) -> Dict[str, Any]:
     user = users.find_one({"email": email})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Check if user is inactive
+    if user.get("status") == "inactive":
+        raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact support.")
 
     stored_hash = user.get("password_hash")
     if not stored_hash or not verify_password(password, stored_hash):

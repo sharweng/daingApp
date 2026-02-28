@@ -263,44 +263,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             <MenuItem
               icon="speedometer-outline"
               label="Admin Dashboard"
-              subtitle="Overview and analytics"
+              subtitle="Manage users, orders, posts, and more"
               onPress={() => onNavigate("adminDashboard")}
-            />
-            <MenuItem
-              icon="people-outline"
-              label="Users"
-              subtitle="Manage user accounts"
-              onPress={() => onNavigate("adminUsers")}
-            />
-            <MenuItem
-              icon="newspaper-outline"
-              label="Posts"
-              subtitle="Moderate community posts"
-              onPress={() => onNavigate("adminPosts")}
-            />
-            <MenuItem
-              icon="scan-outline"
-              label="Scans"
-              subtitle="View all scan history"
-              onPress={() => onNavigate("adminScans")}
-            />
-            <MenuItem
-              icon="receipt-outline"
-              label="Orders"
-              subtitle="View all marketplace orders"
-              onPress={() => onNavigate("adminOrders")}
-            />
-            <MenuItem
-              icon="document-text-outline"
-              label="Audit Logs"
-              subtitle="System activity logs"
-              onPress={() => onNavigate("adminAuditLogs")}
-            />
-            <MenuItem
-              icon="pricetag-outline"
-              label="Vouchers"
-              subtitle="Manage discount vouchers"
-              onPress={() => onNavigate("adminVouchers")}
             />
           </View>
         )}

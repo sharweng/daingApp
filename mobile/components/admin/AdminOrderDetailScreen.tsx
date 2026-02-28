@@ -11,7 +11,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { OrderDetail, Screen } from "../../types";
-import { getOrderById, updateOrderStatus } from "../../services/api";
+import { getOrderById, updateAdminOrderStatus } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   orderId: string;
@@ -27,9 +28,13 @@ const statusColors: Record<string, string> = {
   cancelled: "#EF4444",
 };
 
+// Full status flow for display purposes
 const statusFlow = ["pending", "confirmed", "shipped", "delivered"];
 
-export default function SellerOrderDetailScreen({
+// Admin can only change status to shipped or cancelled (delivered is user-only)
+const adminAllowedStatuses = ["shipped", "cancelled"];
+
+export default function AdminOrderDetailScreen({
   orderId,
   onNavigate,
   onBack,
@@ -45,7 +50,7 @@ export default function SellerOrderDetailScreen({
   const loadOrder = async () => {
     try {
       setLoading(true);
-      const data = await getOrderById(orderId);
+      const data = await getOrderById(API_BASE_URL, orderId);
       setOrder(data);
     } catch (err) {
       console.error("Failed to load order:", err);
@@ -65,7 +70,7 @@ export default function SellerOrderDetailScreen({
         onPress: async () => {
           try {
             setUpdating(true);
-            await updateOrderStatus(order.id, newStatus);
+            await updateAdminOrderStatus(API_BASE_URL, order.id, newStatus);
             await loadOrder();
             Alert.alert("Success", "Order status updated");
           } catch (err) {
@@ -78,11 +83,25 @@ export default function SellerOrderDetailScreen({
     ]);
   };
 
-  const getNextStatus = () => {
-    if (!order) return null;
-    const currentIdx = statusFlow.indexOf(order.status);
-    if (currentIdx === -1 || currentIdx === statusFlow.length - 1) return null;
-    return statusFlow[currentIdx + 1];
+  const showStatusOptions = () => {
+    if (!order || order.status === "delivered" || order.status === "cancelled")
+      return;
+
+    // Admin can only set to shipped or cancelled
+    const options: { text: string; onPress?: () => void; style?: string }[] =
+      adminAllowedStatuses
+        .filter((s) => s !== order.status)
+        .map((status) => ({
+          text:
+            status === "cancelled"
+              ? "Cancel Order"
+              : status.charAt(0).toUpperCase() + status.slice(1),
+          onPress: () => handleUpdateStatus(status),
+        }));
+
+    options.push({ text: "Close", style: "cancel" });
+
+    Alert.alert("Change Order Status", "Select new status:", options as any);
   };
 
   if (loading) {
@@ -102,29 +121,30 @@ export default function SellerOrderDetailScreen({
     return (
       <View style={ecommerceStyles.container}>
         <View style={ecommerceStyles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Ionicons name="arrow-back" size={24} color="#1E293B" />
+          <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={ecommerceStyles.headerTitle}>Order Not Found</Text>
-          <View style={{ width: 24 }} />
+          <View style={ecommerceStyles.backButton} />
         </View>
       </View>
     );
   }
 
   const statusColor = statusColors[order.status] || "#64748B";
-  const nextStatus = getNextStatus();
+  const canUpdateStatus =
+    order.status !== "delivered" && order.status !== "cancelled";
 
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#1E293B" />
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>
           Order #{order.orderNumber}
         </Text>
-        <View style={{ width: 24 }} />
+        <View style={ecommerceStyles.backButton} />
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
@@ -139,25 +159,62 @@ export default function SellerOrderDetailScreen({
             borderColor: statusColor,
           }}
         >
-          <Text
+          <View
             style={{
-              fontSize: 18,
-              fontWeight: "bold",
-              color: statusColor,
-              textTransform: "capitalize",
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
             }}
           >
-            {order.status}
-          </Text>
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "bold",
+                color: statusColor,
+                textTransform: "capitalize",
+              }}
+            >
+              {order.status}
+            </Text>
+            {canUpdateStatus && (
+              <TouchableOpacity
+                style={{
+                  backgroundColor: "#334155",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                }}
+                onPress={showStatusOptions}
+                disabled={updating}
+              >
+                {updating ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text
+                    style={{
+                      color: "#FFFFFF",
+                      fontSize: 12,
+                      fontWeight: "600",
+                    }}
+                  >
+                    Change Status
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
           <Text style={{ fontSize: 14, color: "#94A3B8", marginTop: 4 }}>
             Ordered on{" "}
-            {new Date(order.dateOrdered).toLocaleDateString("en-PH", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {new Date(order.dateOrdered || order.created_at).toLocaleDateString(
+              "en-PH",
+              {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            )}
           </Text>
         </View>
 
@@ -165,8 +222,9 @@ export default function SellerOrderDetailScreen({
         <View style={{ flexDirection: "row", marginBottom: 24 }}>
           {statusFlow.map((status, idx) => {
             const currentIdx = statusFlow.indexOf(order.status);
-            const isCompleted = idx <= currentIdx;
-            const isActive = idx === currentIdx;
+            const isCompleted =
+              order.status === "cancelled" ? false : idx <= currentIdx;
+            const isActive = order.status === status;
             return (
               <View key={status} style={{ flex: 1, alignItems: "center" }}>
                 <View
@@ -176,7 +234,7 @@ export default function SellerOrderDetailScreen({
                     borderRadius: 12,
                     backgroundColor: isCompleted
                       ? statusColors[status]
-                      : "#E2E8F0",
+                      : "#334155",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -264,13 +322,13 @@ export default function SellerOrderDetailScreen({
                 {item.name}
               </Text>
               <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-                ₱{item.price.toLocaleString()} × {item.quantity}
+                ₱{item.price.toLocaleString()} × {item.quantity || 1}
               </Text>
             </View>
             <Text
               style={{ fontSize: 14, fontWeight: "bold", color: "#FFFFFF" }}
             >
-              ₱{(item.price * item.quantity).toLocaleString()}
+              ₱{(item.price * (item.quantity || 1)).toLocaleString()}
             </Text>
           </View>
         ))}
@@ -282,7 +340,7 @@ export default function SellerOrderDetailScreen({
             borderRadius: 12,
             padding: 16,
             marginTop: 8,
-            marginBottom: 16,
+            marginBottom: 24,
           }}
         >
           <View
@@ -294,7 +352,7 @@ export default function SellerOrderDetailScreen({
           >
             <Text style={{ color: "#94A3B8" }}>Subtotal</Text>
             <Text style={{ color: "#FFFFFF" }}>
-              ₱{order.subtotal.toLocaleString()}
+              ₱{(order.subtotal || order.total).toLocaleString()}
             </Text>
           </View>
           <View
@@ -306,10 +364,10 @@ export default function SellerOrderDetailScreen({
           >
             <Text style={{ color: "#94A3B8" }}>Shipping</Text>
             <Text style={{ color: "#FFFFFF" }}>
-              ₱{order.shippingFee.toLocaleString()}
+              ₱{(order.shippingFee || 0).toLocaleString()}
             </Text>
           </View>
-          {order.discount > 0 && (
+          {(order.discount || 0) > 0 && (
             <View
               style={{
                 flexDirection: "row",
@@ -319,7 +377,7 @@ export default function SellerOrderDetailScreen({
             >
               <Text style={{ color: "#10B981" }}>Discount</Text>
               <Text style={{ color: "#10B981" }}>
-                -₱{order.discount.toLocaleString()}
+                -₱{(order.discount || 0).toLocaleString()}
               </Text>
             </View>
           )}
@@ -328,7 +386,7 @@ export default function SellerOrderDetailScreen({
               flexDirection: "row",
               justifyContent: "space-between",
               borderTopWidth: 1,
-              borderTopColor: "#E2E8F0",
+              borderTopColor: "#334155",
               paddingTop: 8,
               marginTop: 8,
             }}
@@ -345,55 +403,6 @@ export default function SellerOrderDetailScreen({
             </Text>
           </View>
         </View>
-
-        {/* Update Status Button */}
-        {nextStatus && order.status !== "cancelled" && (
-          <TouchableOpacity
-            style={{
-              backgroundColor: statusColors[nextStatus],
-              borderRadius: 12,
-              padding: 16,
-              alignItems: "center",
-              marginBottom: 16,
-            }}
-            onPress={() => handleUpdateStatus(nextStatus)}
-            disabled={updating}
-          >
-            {updating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 16,
-                  fontWeight: "600",
-                  textTransform: "capitalize",
-                }}
-              >
-                Mark as {nextStatus}
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {/* Cancel Button */}
-        {["pending", "confirmed"].includes(order.status) && (
-          <TouchableOpacity
-            style={{
-              backgroundColor: "#FEE2E2",
-              borderRadius: 12,
-              padding: 16,
-              alignItems: "center",
-              marginBottom: 24,
-            }}
-            onPress={() => handleUpdateStatus("cancelled")}
-            disabled={updating}
-          >
-            <Text style={{ color: "#EF4444", fontSize: 16, fontWeight: "600" }}>
-              Cancel Order
-            </Text>
-          </TouchableOpacity>
-        )}
       </ScrollView>
     </View>
   );

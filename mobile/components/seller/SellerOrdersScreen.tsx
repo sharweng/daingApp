@@ -20,7 +20,6 @@ interface Props {
 const statusColors: Record<string, string> = {
   pending: "#F59E0B",
   confirmed: "#3B82F6",
-  preparing: "#8B5CF6",
   shipped: "#06B6D4",
   delivered: "#10B981",
   cancelled: "#EF4444",
@@ -130,7 +129,6 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
     "all",
     "pending",
     "confirmed",
-    "preparing",
     "shipped",
     "delivered",
     "cancelled",

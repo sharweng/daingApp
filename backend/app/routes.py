@@ -109,6 +109,12 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     if session:
         user = get_user_by_id(session["user_id"])
         if user:
+            # Check if user is inactive (need to get full user from DB)
+            from bson import ObjectId
+            db = get_db()
+            full_user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+            if full_user and full_user.get("status") == "inactive":
+                raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact support.")
             return {"status": "success", "user": user}
     
     # Try JWT/Firebase auth (web)
@@ -156,6 +162,10 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
                 pass
         
         if user:
+            # Check if user is inactive
+            if user.get("status") == "inactive":
+                raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact support.")
+            
             uid = str(user["_id"])
             return {
                 "id": uid,
@@ -433,19 +443,31 @@ async def google_signin(body: GoogleSignInBody):
 
 @router.patch("/auth/profile")
 async def update_profile(body: ProfileUpdateBody, authorization: Optional[str] = Header(None)):
-    """Update user profile (web frontend)."""
+    """Update user profile (supports both mobile session and web Firebase/JWT auth)."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = authorization.replace("Bearer ", "")
+    db = get_db()
+    user = None
     
-    # Get user from JWT/Firebase
-    try:
-        from .auth import get_current_user_web
-        from fastapi.security import HTTPAuthorizationCredentials
-        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        user = await get_current_user_web.__wrapped__(creds)
-    except:
+    # Try session-based auth first (mobile)
+    session = validate_session(token)
+    if session:
+        from bson import ObjectId
+        user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+    
+    # Fall back to JWT/Firebase auth (web)
+    if not user:
+        try:
+            from .auth import get_current_user_web
+            from fastapi.security import HTTPAuthorizationCredentials
+            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            user = await get_current_user_web.__wrapped__(creds)
+        except:
+            pass
+    
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
     import re
@@ -511,19 +533,31 @@ async def update_profile(body: ProfileUpdateBody, authorization: Optional[str] =
 
 @router.post("/auth/profile/avatar")
 async def upload_profile_avatar(file: UploadFile = File(...), authorization: Optional[str] = Header(None)):
-    """Upload profile avatar (web frontend)."""
+    """Upload profile avatar (supports both mobile session and web Firebase/JWT auth)."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = authorization.replace("Bearer ", "")
+    db = get_db()
+    user = None
     
-    # Get user from JWT/Firebase
-    try:
-        from .auth import get_current_user_web
-        from fastapi.security import HTTPAuthorizationCredentials
-        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        user = await get_current_user_web.__wrapped__(creds)
-    except:
+    # Try session-based auth first (mobile)
+    session = validate_session(token)
+    if session:
+        from bson import ObjectId
+        user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+    
+    # Fall back to JWT/Firebase auth (web)
+    if not user:
+        try:
+            from .auth import get_current_user_web
+            from fastapi.security import HTTPAuthorizationCredentials
+            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            user = await get_current_user_web.__wrapped__(creds)
+        except:
+            pass
+    
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
     if not cloudinary:

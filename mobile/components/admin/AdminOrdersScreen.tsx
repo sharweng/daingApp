@@ -23,7 +23,6 @@ interface Props {
 const statusColors: Record<string, string> = {
   pending: "#F59E0B",
   confirmed: "#3B82F6",
-  preparing: "#8B5CF6",
   shipped: "#06B6D4",
   delivered: "#10B981",
   cancelled: "#EF4444",
@@ -61,9 +60,9 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
 
   const filteredOrders = orders.filter((o) => {
     const matchesSearch =
-      o.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.customerEmail?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.customerName?.toLowerCase().includes(searchQuery.toLowerCase());
+      o.order_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.buyer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.seller_name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || o.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -92,7 +91,7 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
           }}
         >
           <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
-            #{item.orderNumber}
+            #{item.order_number}
           </Text>
           <View
             style={{
@@ -115,10 +114,10 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
           </View>
         </View>
         <Text style={{ fontSize: 14, color: "#FFFFFF" }}>
-          {item.customerName}
+          {item.buyer_name}
         </Text>
         <Text style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8 }}>
-          {item.customerEmail}
+          {item.seller_name}
         </Text>
         <View
           style={{
@@ -128,7 +127,7 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
           }}
         >
           <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-            {new Date(item.createdAt).toLocaleDateString("en-PH", {
+            {new Date(item.created_at).toLocaleDateString("en-PH", {
               year: "numeric",
               month: "short",
               day: "numeric",
@@ -136,7 +135,7 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: "#94A3B8", marginRight: 8 }}>
-              {item.itemCount} items
+              {item.total_items} items
             </Text>
             <Text
               style={{ fontSize: 16, fontWeight: "bold", color: "#3B82F6" }}
@@ -154,7 +153,6 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
     "all",
     "pending",
     "confirmed",
-    "preparing",
     "shipped",
     "delivered",
     "cancelled",

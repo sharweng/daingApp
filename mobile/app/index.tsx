@@ -20,6 +20,7 @@ import ScanTabScreen from "../components/core/ScanTabScreen";
 // Shared components
 import TabBar from "../components/shared/TabBar";
 import SettingsScreen from "../components/shared/SettingsScreen";
+import ProfileScreen from "../components/shared/ProfileScreen";
 import AppSettingsScreen from "../components/shared/AppSettingsScreen";
 import AboutDaingScreen from "../components/shared/AboutDaingScreen";
 import PublicationsScreen from "../components/shared/PublicationsScreen";
@@ -49,6 +50,7 @@ import SellerReviewsScreen from "../components/seller/SellerReviewsScreen";
 import AdminDashboardScreen from "../components/admin/AdminDashboardScreen";
 import AdminUsersScreen from "../components/admin/AdminUsersScreen";
 import AdminOrdersScreen from "../components/admin/AdminOrdersScreen";
+import AdminOrderDetailScreen from "../components/admin/AdminOrderDetailScreen";
 import AdminVouchersScreen from "../components/admin/AdminVouchersScreen";
 import AdminPostsScreen from "../components/admin/AdminPostsScreen";
 import AdminScansScreen from "../components/admin/AdminScansScreen";
@@ -436,6 +438,10 @@ export default function Index() {
     );
   }
 
+  if (currentScreen === "profile") {
+    return <ProfileScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
   if (currentScreen === "appSettings") {
     return (
       <AppSettingsScreen
@@ -642,6 +648,16 @@ export default function Index() {
 
   if (currentScreen === "adminOrders") {
     return <AdminOrdersScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "adminOrderDetail") {
+    return (
+      <AdminOrderDetailScreen
+        orderId={navParams.orderId || ""}
+        onNavigate={navigate}
+        onBack={goBack}
+      />
+    );
   }
 
   if (currentScreen === "adminVouchers") {

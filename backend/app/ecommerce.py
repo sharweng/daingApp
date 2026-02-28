@@ -3231,6 +3231,10 @@ class ToggleUserStatusBody(BaseModel):
     reason: str = ""
 
 
+class UpdateUserRoleBody(BaseModel):
+    role: str
+
+
 @router.get("/admin/users")
 async def get_admin_users(
     page: int = 1,
@@ -3343,6 +3347,37 @@ async def toggle_user_status(user_id: str, body: ToggleUserStatusBody, user=Depe
         "new_status": new_status,
         "user_id": user_id,
         "message": f"User {'deactivated' if new_status == 'inactive' else 'activated'} successfully",
+    }
+
+
+@router.put("/admin/users/{user_id}/role")
+async def update_user_role(user_id: str, body: UpdateUserRoleBody, user=Depends(_require_admin)):
+    """Update user role."""
+    db = get_db()
+    users_collection = db["users"]
+
+    allowed_roles = ["user", "seller", "admin"]
+    if body.role not in allowed_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(allowed_roles)}")
+
+    try:
+        oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    target_user = users_collection.find_one({"_id": oid})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    old_role = target_user.get("role", "user")
+    users_collection.update_one({"_id": oid}, {"$set": {"role": body.role, "role_updated_at": datetime.utcnow().isoformat()}})
+
+    return {
+        "status": "success",
+        "old_role": old_role,
+        "new_role": body.role,
+        "user_id": user_id,
+        "message": f"User role updated from {old_role} to {body.role}",
     }
 
 

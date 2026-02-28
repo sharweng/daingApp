@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   RefreshControl,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
@@ -35,6 +36,7 @@ export default function AdminUsersScreen({ onNavigate, onBack }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   useEffect(() => {
     loadUsers();
@@ -112,7 +114,11 @@ export default function AdminUsersScreen({ onNavigate, onBack }: Props) {
       u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = roleFilter === "all" || u.role === roleFilter;
-    return matchesSearch && matchesRole;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && u.isActive) ||
+      (statusFilter === "inactive" && !u.isActive);
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
   const renderUser = useCallback(
@@ -265,7 +271,7 @@ export default function AdminUsersScreen({ onNavigate, onBack }: Props) {
       </View>
 
       {/* Search */}
-      <View style={{ padding: 16 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
         <View style={ecommerceStyles.searchContainer}>
           <Ionicons name="search" size={20} color="#94A3B8" />
           <TextInput
@@ -276,32 +282,69 @@ export default function AdminUsersScreen({ onNavigate, onBack }: Props) {
             onChangeText={setSearchQuery}
           />
         </View>
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-          {["all", "user", "seller", "admin"].map((r) => (
-            <TouchableOpacity
-              key={r}
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-                borderRadius: 20,
-                backgroundColor:
-                  roleFilter === r ? roleColors[r] || "#3B82F6" : "#F1F5F9",
-              }}
-              onPress={() => setRoleFilter(r)}
-            >
-              <Text
-                style={{
-                  color: roleFilter === r ? "#fff" : "#64748B",
-                  fontWeight: "500",
-                  textTransform: "capitalize",
-                }}
-              >
-                {r}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
       </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
+        style={{ flexGrow: 0, flexShrink: 0, maxHeight: 56 }}
+      >
+        {["all", "user", "seller", "admin"].map((r) => (
+          <TouchableOpacity
+            key={r}
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 20,
+              backgroundColor:
+                roleFilter === r ? roleColors[r] || "#3B82F6" : "#334155",
+              marginRight: 8,
+            }}
+            onPress={() => setRoleFilter(r)}
+          >
+            <Text
+              style={{
+                color: roleFilter === r ? "#fff" : "#94A3B8",
+                fontWeight: "500",
+                textTransform: "capitalize",
+              }}
+            >
+              {r}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        <View
+          style={{ width: 1, backgroundColor: "#475569", marginRight: 8 }}
+        />
+        {["active", "inactive"].map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 20,
+              backgroundColor:
+                statusFilter === s
+                  ? s === "active"
+                    ? "#10B981"
+                    : "#EF4444"
+                  : "#334155",
+              marginRight: 8,
+            }}
+            onPress={() => setStatusFilter(s === statusFilter ? "all" : s)}
+          >
+            <Text
+              style={{
+                color: statusFilter === s ? "#fff" : "#94A3B8",
+                fontWeight: "500",
+                textTransform: "capitalize",
+              }}
+            >
+              {s}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       {loading ? (
         <View

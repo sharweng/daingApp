@@ -102,7 +102,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
       >
         {/* User Profile Section */}
         {user ? (
-          <View style={styles.profileSection}>
+          <TouchableOpacity
+            style={styles.profileSection}
+            onPress={() => onNavigate("profile")}
+            activeOpacity={0.7}
+          >
             <View style={styles.avatarContainer}>
               <Ionicons name="person" size={32} color="#fff" />
             </View>
@@ -120,7 +124,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </Text>
               </View>
             </View>
-          </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={theme.colors.textSecondary}
+            />
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity
             style={styles.loginPrompt}
@@ -213,43 +222,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <MenuItem
                 icon="speedometer-outline"
                 label="Admin Dashboard"
-                subtitle="Overview and analytics"
+                subtitle="Manage users, orders, posts, and more"
                 onPress={() => onNavigate("adminDashboard")}
-                color="#EF4444"
-              />
-              <MenuItem
-                icon="people-outline"
-                label="Users"
-                subtitle="Manage user accounts"
-                onPress={() => onNavigate("adminUsers")}
-                color="#EF4444"
-              />
-              <MenuItem
-                icon="newspaper-outline"
-                label="Posts"
-                subtitle="Moderate community posts"
-                onPress={() => onNavigate("adminPosts")}
-                color="#EF4444"
-              />
-              <MenuItem
-                icon="receipt-outline"
-                label="Orders"
-                subtitle="View all marketplace orders"
-                onPress={() => onNavigate("adminOrders")}
-                color="#EF4444"
-              />
-              <MenuItem
-                icon="document-text-outline"
-                label="Audit Logs"
-                subtitle="System activity logs"
-                onPress={() => onNavigate("adminAuditLogs")}
-                color="#EF4444"
-              />
-              <MenuItem
-                icon="pricetag-outline"
-                label="Vouchers"
-                subtitle="Manage discount vouchers"
-                onPress={() => onNavigate("adminVouchers")}
                 color="#EF4444"
               />
             </View>

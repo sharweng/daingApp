@@ -521,6 +521,16 @@ export const loginWithFirebase = async (
       };
     }
 
+    // Check if it's a backend 403 error (user is inactive)
+    if (error.response?.status === 403) {
+      return {
+        status: "error",
+        message:
+          error.response?.data?.detail ||
+          "Your account has been deactivated. Please contact support.",
+      };
+    }
+
     // Check if it's a backend 401 error (user not in MongoDB)
     if (error.response?.status === 401) {
       // User exists in Firebase but not in MongoDB - try to register them
@@ -601,6 +611,179 @@ export const refreshFirebaseToken = async (): Promise<string | null> => {
     setAuthToken(token);
   }
   return token;
+};
+
+// ============================================
+// PROFILE API
+// ============================================
+
+export interface UserProfile {
+  id: string;
+  name?: string;
+  full_name?: string;
+  email: string;
+  phone?: string;
+  street_address?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  gender?: string;
+  avatar_url?: string | null;
+  role?: string;
+}
+
+export interface ProfileUpdateData {
+  full_name?: string;
+  phone?: string;
+  email?: string;
+  street_address?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  gender?: string;
+}
+
+/**
+ * Get user profile data from backend.
+ */
+export const getUserProfile = async (
+  baseUrl: string,
+): Promise<UserProfile | null> => {
+  try {
+    const response = await axios.get(`${normalizeUrl(baseUrl)}/auth/me`, {
+      headers: getAuthHeaders(),
+      timeout: 10000,
+    });
+    const data = response.data;
+    // Handle both session-based (mobile) and JWT-based (web) responses
+    const user = data.user || data;
+    return {
+      id: user.id || "",
+      name: user.name || user.username || "",
+      full_name: user.full_name || user.name || user.username || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      street_address: user.street_address || "",
+      city: user.city || "",
+      province: user.province || "",
+      postal_code: user.postal_code || "",
+      gender: user.gender || "",
+      avatar_url: user.avatar_url || null,
+      role: user.role || "user",
+    };
+  } catch (error) {
+    console.error("Failed to get user profile:", error);
+    return null;
+  }
+};
+
+/**
+ * Update user profile.
+ */
+export const updateUserProfile = async (
+  baseUrl: string,
+  data: ProfileUpdateData,
+): Promise<{ success: boolean; profile?: UserProfile; error?: string }> => {
+  try {
+    const response = await axios.patch(
+      `${normalizeUrl(baseUrl)}/auth/profile`,
+      data,
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        timeout: 10000,
+      },
+    );
+    const profile = response.data;
+    return {
+      success: true,
+      profile: {
+        id: profile.id || "",
+        name: profile.name || "",
+        full_name: profile.full_name || profile.name || "",
+        email: profile.email || "",
+        phone: profile.phone || "",
+        street_address: profile.street_address || "",
+        city: profile.city || "",
+        province: profile.province || "",
+        postal_code: profile.postal_code || "",
+        gender: profile.gender || "",
+        avatar_url: profile.avatar_url || null,
+        role: profile.role || "user",
+      },
+    };
+  } catch (error: any) {
+    const message =
+      error.response?.data?.detail ||
+      error.response?.data?.message ||
+      "Failed to update profile";
+    return { success: false, error: message };
+  }
+};
+
+/**
+ * Upload profile avatar image.
+ */
+export const uploadProfileAvatar = async (
+  baseUrl: string,
+  imageUri: string,
+): Promise<{ success: boolean; avatar_url?: string; error?: string }> => {
+  try {
+    // Create form data for the image upload
+    const formData = new FormData();
+
+    // Get the file name from URI
+    const uriParts = imageUri.split("/");
+    const fileName = uriParts[uriParts.length - 1];
+
+    // Determine the file type
+    const extension = fileName.split(".").pop()?.toLowerCase() || "jpg";
+    const mimeType = extension === "png" ? "image/png" : "image/jpeg";
+
+    formData.append("file", {
+      uri: imageUri,
+      name: fileName,
+      type: mimeType,
+    } as any);
+
+    const response = await axios.post(
+      `${normalizeUrl(baseUrl)}/auth/profile/avatar`,
+      formData,
+      {
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "multipart/form-data",
+        },
+        timeout: 30000, // 30 seconds for upload
+      },
+    );
+
+    return {
+      success: true,
+      avatar_url: response.data.avatar_url,
+    };
+  } catch (error: any) {
+    const message =
+      error.response?.data?.detail ||
+      error.response?.data?.message ||
+      "Failed to upload avatar";
+    return { success: false, error: message };
+  }
+};
+
+/**
+ * Change user password (placeholder - not yet implemented in backend).
+ */
+export const changePassword = async (
+  baseUrl: string,
+  oldPassword: string,
+  newPassword: string,
+): Promise<{ success: boolean; error?: string }> => {
+  // Password change is handled by Firebase Auth for web
+  // For mobile with session-based auth, this would need a backend endpoint
+  return {
+    success: false,
+    error: "Password change is not yet available. Please use the web app.",
+  };
 };
 
 export const fetchAllHistory = async (
@@ -1794,6 +1977,41 @@ export const getAdminPosts = async (
     };
   } catch (error) {
     return { posts: [], total: 0 };
+  }
+};
+
+export const deleteAdminPost = async (
+  baseUrl: string,
+  postId: string,
+): Promise<{ success: boolean }> => {
+  try {
+    await axios.delete(`${normalizeUrl(baseUrl)}/admin/posts/${postId}`, {
+      headers: getAuthHeaders(),
+      timeout: 10000,
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false };
+  }
+};
+
+export const togglePostVisibility = async (
+  baseUrl: string,
+  postId: string,
+  visible: boolean,
+): Promise<{ success: boolean }> => {
+  try {
+    await axios.put(
+      `${normalizeUrl(baseUrl)}/admin/posts/${postId}/toggle-status`,
+      { reason: visible ? "" : "Disabled by admin" },
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        timeout: 10000,
+      },
+    );
+    return { success: true };
+  } catch (error) {
+    return { success: false };
   }
 };
 

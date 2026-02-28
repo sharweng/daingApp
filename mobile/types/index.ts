@@ -20,6 +20,7 @@ export type Screen =
   | "userActivity"
   // Settings screens
   | "settings"
+  | "profile"
   | "appSettings"
   | "aboutDaing"
   | "publications"
