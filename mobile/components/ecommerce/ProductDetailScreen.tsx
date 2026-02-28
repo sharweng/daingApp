@@ -44,6 +44,10 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   const [addingToCart, setAddingToCart] = useState(false);
 
   const loadProduct = useCallback(async () => {
+    if (!productId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [productData, reviewsData] = await Promise.all([
@@ -61,7 +65,7 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   }, [productId]);
 
   const checkWishlistStatus = useCallback(async () => {
-    if (isAuthenticated) {
+    if (isAuthenticated && productId) {
       const inWishlist = await checkWishlist(API_BASE_URL, productId);
       setIsWishlisted(inWishlist);
     }
@@ -77,6 +81,7 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
       onNavigate("login");
       return;
     }
+    if (!productId) return;
     const result = await toggleWishlist(API_BASE_URL, productId);
     setIsWishlisted(result.in_wishlist);
   };

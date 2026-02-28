@@ -80,7 +80,9 @@ export default function Index() {
   // Navigation & Settings
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
   const [navParams, setNavParams] = useState<NavigationParams>({});
-  const [screenHistory, setScreenHistory] = useState<Screen[]>(["home"]);
+  const [screenHistory, setScreenHistory] = useState<
+    { screen: Screen; params: NavigationParams }[]
+  >([]);
   const [showSettings, setShowSettings] = useState(false);
   const [autoSaveDataset, setAutoSaveDataset] = useState(false);
   const [serverBaseUrl, setServerBaseUrl] = useState(DEFAULT_SERVER_BASE_URL);
@@ -253,18 +255,22 @@ export default function Index() {
 
   // Navigation helpers
   const navigate = (screen: Screen, params?: NavigationParams) => {
-    setScreenHistory((prev) => [...prev, currentScreen]);
+    setScreenHistory((prev) => [
+      ...prev,
+      { screen: currentScreen, params: navParams },
+    ]);
     setNavParams(params || {});
     setCurrentScreen(screen);
   };
 
   const goBack = () => {
     if (screenHistory.length > 0) {
-      const prevScreen = screenHistory[screenHistory.length - 1];
-      setScreenHistory((prev) => prev.slice(0, -1));
-      setNavParams({});
-      setCurrentScreen(prevScreen);
+      const prev = screenHistory[screenHistory.length - 1];
+      setScreenHistory((h) => h.slice(0, -1));
+      setNavParams(prev.params);
+      setCurrentScreen(prev.screen);
     } else {
+      setNavParams({});
       setCurrentScreen("home");
     }
   };
@@ -420,6 +426,7 @@ export default function Index() {
     return (
       <OrderDetailScreen
         orderId={navParams.orderId || ""}
+        serverBaseUrl={serverBaseUrl}
         onNavigate={navigate}
         onBack={goBack}
       />

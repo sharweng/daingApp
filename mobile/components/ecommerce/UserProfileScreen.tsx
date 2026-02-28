@@ -30,7 +30,7 @@ const MenuItem: React.FC<MenuItemProps> = ({
   label,
   subtitle,
   onPress,
-  color = "#333",
+  color = "#E2E8F0",
 }) => (
   <TouchableOpacity style={styles.listItem} onPress={onPress}>
     <View style={styles.listItemIcon}>
@@ -40,7 +40,7 @@ const MenuItem: React.FC<MenuItemProps> = ({
       <Text style={[styles.listItemTitle, { color }]}>{label}</Text>
       {subtitle && <Text style={styles.listItemSubtitle}>{subtitle}</Text>}
     </View>
-    <Ionicons name="chevron-forward" size={20} color="#ccc" />
+    <Ionicons name="chevron-forward" size={20} color="#64748B" />
   </TouchableOpacity>
 );
 
@@ -115,7 +115,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       <ScrollView style={styles.scrollContainer}>
         {/* User Info */}
         <View
-          style={{ backgroundColor: "#1E293B", padding: 20, alignItems: "center" }}
+          style={{
+            backgroundColor: "#1E293B",
+            padding: 20,
+            alignItems: "center",
+          }}
         >
           <View
             style={{

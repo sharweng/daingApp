@@ -5,11 +5,13 @@ Routes for product catalog, cart, wishlist, and orders.
 Merged from daingGraderWeb backend.
 """
 
+import io
 import re
 import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from bson import ObjectId
 import cloudinary
@@ -17,6 +19,7 @@ import cloudinary.uploader
 
 from .config import get_db
 from .auth import get_current_user_web, require_seller_user
+from .order_receipt import build_receipt_pdf_bytes
 
 router = APIRouter()
 
@@ -136,20 +139,38 @@ def _normalize_order(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _get_current_user_from_header(authorization: Optional[str] = Header(None)):
-    """Get current user from Authorization header."""
+    """Get current user from Authorization header.
+    
+    Supports multiple auth methods:
+    1. Session tokens (mobile app)
+    2. Firebase ID tokens (web with Firebase auth)
+    3. JWT tokens (web fallback)
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = authorization.replace("Bearer ", "")
     
-    from .auth import _init_firebase_admin, _verify_firebase_token, JWT_SECRET, JWT_ALGORITHM
+    from .auth import (
+        _init_firebase_admin, _verify_firebase_token, 
+        JWT_SECRET, JWT_ALGORITHM, 
+        validate_session, get_user_by_id
+    )
     from jose import jwt as jose_jwt
     
     db = get_db()
     user = None
     
-    # Try Firebase auth first
-    if _init_firebase_admin():
+    # Try session-based auth first (mobile app)
+    session = validate_session(token)
+    if session:
+        user_data = get_user_by_id(session["user_id"])
+        if user_data:
+            # Return the full user document from database for consistency
+            user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+    
+    # Try Firebase auth if session auth failed
+    if not user and _init_firebase_admin():
         try:
             decoded = _verify_firebase_token(token)
             firebase_uid = decoded.get("uid")
@@ -818,6 +839,32 @@ async def get_orders(page: int = 1, page_size: int = 10, user=Depends(_get_curre
     return {"status": "success", "orders": [_normalize_order(d) for d in docs], "total": total}
 
 
+@router.get("/orders/{order_id}")
+async def get_order_by_id(order_id: str, user=Depends(_get_current_user_from_header)):
+    """Get a single order by ID."""
+    orders_collection = _get_orders_collection()
+    if orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(order_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid order ID")
+
+    doc = orders_collection.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    user_id = str(user.get("_id"))
+    role = (user.get("role") or "user").strip().lower()
+    
+    # Allow access if user owns the order, is the seller, or is admin
+    if doc.get("user_id") != user_id and doc.get("seller_id") != user_id and role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return {"status": "success", "order": _normalize_order(doc)}
+
+
 @router.get("/orders/seller")
 async def get_seller_orders(page: int = 1, page_size: int = 10, user=Depends(_require_seller)):
     """Get orders for seller's products."""
@@ -877,6 +924,149 @@ async def cancel_order(order_id: str, user=Depends(_get_current_user_from_header
 
     updated = orders_collection.find_one({"_id": oid})
     return {"status": "success", "order": _normalize_order(updated)}
+
+
+class OrderStatusUpdateBody(BaseModel):
+    status: str
+
+
+@router.patch("/orders/{order_id}/status")
+async def update_order_status(order_id: str, body: OrderStatusUpdateBody, user=Depends(_require_seller)):
+    """Update order status (seller only - can set: confirmed, shipped, cancelled)."""
+    orders_collection = _get_orders_collection()
+    products_collection = _get_products_collection()
+    if orders_collection is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(order_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid order ID")
+
+    status = (body.status or "").strip().lower()
+    if status not in {"confirmed", "shipped", "cancelled"}:
+        raise HTTPException(status_code=400, detail="Invalid status value. Sellers can only set: confirmed, shipped, cancelled")
+
+    doc = orders_collection.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    seller_id = str(user.get("_id"))
+    seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1}))
+    seller_product_ids = {str(p.get("_id")) for p in seller_products}
+    if not seller_product_ids:
+        raise HTTPException(status_code=403, detail="No seller products found")
+
+    items = doc.get("items", [])
+    if not any(it.get("product_id") in seller_product_ids for it in items):
+        raise HTTPException(status_code=403, detail="No order items belong to this seller")
+
+    updates: Dict[str, Any] = {"status": status, "updated_at": datetime.utcnow().isoformat()}
+
+    # Deduct stock when shipped/delivered
+    deducted_sellers = set(doc.get("stock_deducted_sellers", []))
+    if status in {"shipped", "delivered"} and seller_id not in deducted_sellers:
+        for it in items:
+            pid = it.get("product_id")
+            if pid not in seller_product_ids:
+                continue
+            try:
+                prod_oid = ObjectId(pid)
+            except:
+                continue
+            product = products_collection.find_one({"_id": prod_oid})
+            if not product:
+                continue
+            qty = int(it.get("qty", 1))
+            current_stock = int(product.get("stock_qty", 0))
+            new_stock = max(0, current_stock - qty)
+            products_collection.update_one(
+                {"_id": prod_oid},
+                {
+                    "$set": {"stock_qty": new_stock, "updated_at": datetime.utcnow().isoformat()},
+                    "$inc": {"sold_count": qty},
+                },
+            )
+        deducted_sellers.add(seller_id)
+        updates["stock_deducted_sellers"] = list(deducted_sellers)
+
+    orders_collection.update_one({"_id": oid}, {"$set": updates})
+    updated = orders_collection.find_one({"_id": oid})
+
+    return {"status": "success", "order": _normalize_order(updated)}
+
+
+@router.patch("/orders/{order_id}/mark-delivered")
+async def mark_order_delivered(order_id: str, user=Depends(_get_current_user_from_header)):
+    """Allow users to mark shipped orders as delivered when they receive them."""
+    orders_collection = _get_orders_collection()
+    if orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(order_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid order ID")
+
+    user_id = str(user.get("_id"))
+    doc = orders_collection.find_one({"_id": oid, "user_id": user_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    current_status = (doc.get("status") or "").strip().lower()
+    if current_status != "shipped":
+        raise HTTPException(status_code=400, detail="Only shipped orders can be marked as delivered")
+
+    updates = {
+        "status": "delivered",
+        "updated_at": datetime.utcnow().isoformat(),
+        "delivered_at": datetime.utcnow().isoformat()
+    }
+
+    orders_collection.update_one({"_id": oid}, {"$set": updates})
+    updated = orders_collection.find_one({"_id": oid})
+
+    return {"status": "success", "order": _normalize_order(updated)}
+
+
+@router.get("/orders/{order_id}/receipt.pdf")
+async def get_order_receipt_pdf(order_id: str, user=Depends(_get_current_user_from_header)):
+    """Download order receipt as PDF. Users can download their own orders, sellers can download orders containing their products."""
+    orders_collection = _get_orders_collection()
+    products_collection = _get_products_collection()
+    if orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(order_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid order ID")
+
+    user_id = str(user.get("_id"))
+    role = (user.get("role") or "user").strip().lower()
+
+    doc = orders_collection.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Permission check
+    if role == "user":
+        if doc.get("user_id") != user_id:
+            raise HTTPException(status_code=404, detail="Order not found")
+    elif role == "seller":
+        if products_collection is None:
+            raise HTTPException(status_code=500, detail="Database not configured")
+        seller_products = list(products_collection.find({"seller_id": user_id}, {"_id": 1}))
+        seller_product_ids = {str(p.get("_id")) for p in seller_products}
+        items = doc.get("items", [])
+        if str(doc.get("seller_id", "")) != user_id and not any(it.get("product_id") in seller_product_ids for it in items):
+            raise HTTPException(status_code=404, detail="Order not found")
+
+    order_payload = _normalize_order(doc)
+    pdf_bytes = build_receipt_pdf_bytes(order_payload)
+    filename = f"receipt-{order_payload.get('order_number', order_id)}.pdf"
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
 
 
 # ============================================
@@ -1193,3 +1383,900 @@ async def create_category(body: CategoryCreateBody, user=Depends(_require_seller
     result = collection.insert_one(doc)
     doc["_id"] = result.inserted_id
     return {"status": "success", "category": _normalize_category(doc)}
+
+
+# ============================================
+# SELLER ANALYTICS ROUTES
+# ============================================
+
+@router.get("/seller/analytics/kpis")
+async def get_seller_kpis(user=Depends(_require_seller)):
+    """Get seller KPI metrics for dashboard."""
+    db = get_db()
+    products_collection = _get_products_collection()
+    orders_collection = _get_orders_collection()
+
+    if db is None or products_collection is None or orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+
+    try:
+        # Get total products count
+        total_products = products_collection.count_documents({
+            "seller_id": seller_id,
+            "is_disabled": {"$ne": True}
+        })
+
+        # Get seller product IDs for order filtering
+        seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1}))
+        seller_product_ids = {str(p.get("_id")) for p in seller_products}
+        seller_product_oids = [p.get("_id") for p in seller_products if p.get("_id")]
+
+        # Calculate order metrics
+        total_orders = 0
+        total_earnings = 0.0
+
+        if seller_product_ids:
+            docs = list(orders_collection.find({}))
+            for doc in docs:
+                items = doc.get("items", [])
+                seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+                if seller_items:
+                    total_orders += 1
+                    seller_total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in seller_items)
+                    total_earnings += seller_total
+
+        # Get average rating from reviews
+        avg_rating = 0.0
+        reviews_collection = db["product_reviews"]
+        if reviews_collection is not None and seller_product_oids:
+            rating_pipeline = [
+                {"$match": {"product_id": {"$in": seller_product_oids}}},
+                {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+            ]
+            rating_result = list(reviews_collection.aggregate(rating_pipeline))
+            if rating_result and rating_result[0].get("avg"):
+                avg_rating = round(rating_result[0].get("avg", 0), 1)
+
+        # Month-over-month change calculations
+        now = datetime.utcnow()
+        curr_month_start = datetime(now.year, now.month, 1)
+        prev_month_start = datetime(now.year if now.month > 1 else now.year - 1, now.month - 1 if now.month > 1 else 12, 1)
+        prev_month_end = curr_month_start
+
+        # Products change
+        curr_month_products = products_collection.count_documents({
+            "seller_id": seller_id,
+            "is_disabled": {"$ne": True},
+            "created_at": {"$gte": curr_month_start.isoformat()}
+        })
+        prev_month_products = products_collection.count_documents({
+            "seller_id": seller_id,
+            "is_disabled": {"$ne": True},
+            "created_at": {"$gte": prev_month_start.isoformat(), "$lt": prev_month_end.isoformat()}
+        })
+
+        # Orders & earnings change
+        curr_month_orders = 0
+        curr_month_earnings = 0.0
+        prev_month_orders = 0
+        prev_month_earnings = 0.0
+
+        if seller_product_ids:
+            docs = list(orders_collection.find({}))
+            for doc in docs:
+                items = doc.get("items", [])
+                seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+                if seller_items:
+                    created_raw = doc.get("created_at")
+                    created_dt = None
+                    if created_raw:
+                        try:
+                            if isinstance(created_raw, str):
+                                created_dt = datetime.fromisoformat(created_raw.replace("Z", "+00:00")).replace(tzinfo=None)
+                            else:
+                                created_dt = created_raw
+                        except:
+                            created_dt = None
+                    seller_total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in seller_items)
+                    if created_dt and created_dt >= curr_month_start:
+                        curr_month_orders += 1
+                        curr_month_earnings += seller_total
+                    elif created_dt and prev_month_start <= created_dt < prev_month_end:
+                        prev_month_orders += 1
+                        prev_month_earnings += seller_total
+
+        def _pct_change(curr, prev):
+            if prev == 0:
+                return 100.0 if curr > 0 else 0.0
+            return round((curr - prev) / prev * 100, 1)
+
+        # Rating change
+        curr_avg_rating = 0.0
+        prev_avg_rating = 0.0
+        if reviews_collection is not None and seller_product_oids:
+            r_curr = list(reviews_collection.aggregate([
+                {"$match": {"product_id": {"$in": seller_product_oids}, "created_at": {"$gte": curr_month_start.isoformat()}}},
+                {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+            ]))
+            r_prev = list(reviews_collection.aggregate([
+                {"$match": {"product_id": {"$in": seller_product_oids}, "created_at": {"$gte": prev_month_start.isoformat(), "$lt": prev_month_end.isoformat()}}},
+                {"$group": {"_id": None, "avg": {"$avg": "$rating"}}},
+            ]))
+            curr_avg_rating = round(r_curr[0].get("avg", 0), 1) if r_curr else 0.0
+            prev_avg_rating = round(r_prev[0].get("avg", 0), 1) if r_prev else 0.0
+
+        return {
+            "status": "success",
+            "kpis": {
+                "total_products": total_products,
+                "total_orders": total_orders,
+                "total_earnings": round(total_earnings, 2),
+                "average_rating": avg_rating,
+                "products_change": _pct_change(curr_month_products, prev_month_products),
+                "orders_change": _pct_change(curr_month_orders, prev_month_orders),
+                "earnings_change": _pct_change(curr_month_earnings, prev_month_earnings),
+                "rating_change": _pct_change(curr_avg_rating, prev_avg_rating),
+            }
+        }
+    except Exception as e:
+        print(f"Error in get_seller_kpis: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/analytics/orders/recent")
+async def get_seller_recent_orders(limit: int = 3, user=Depends(_require_seller)):
+    """Get recent orders for seller dashboard."""
+    products_collection = _get_products_collection()
+    orders_collection = _get_orders_collection()
+
+    if products_collection is None or orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+
+    try:
+        seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1}))
+        seller_product_ids = {str(p.get("_id")) for p in seller_products}
+
+        if not seller_product_ids:
+            return {"status": "success", "orders": []}
+
+        docs = list(orders_collection.find({}).sort("created_at", -1).limit(limit * 3))
+        recent_orders = []
+
+        for doc in docs:
+            items = doc.get("items", [])
+            seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+            if seller_items:
+                seller_total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in seller_items)
+                order_obj = _normalize_order(doc)
+                recent_orders.append({
+                    "id": order_obj.get("id"),
+                    "order_number": order_obj.get("order_number", order_obj.get("id")),
+                    "customer": order_obj.get("address", {}).get("full_name", "Customer"),
+                    "total": seller_total,
+                    "status": order_obj.get("status", "confirmed"),
+                    "created_at": order_obj.get("created_at")
+                })
+                if len(recent_orders) >= limit:
+                    break
+
+        return {"status": "success", "orders": recent_orders}
+    except Exception as e:
+        print(f"Error in get_seller_recent_orders: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/analytics/reviews/recent")
+async def get_seller_recent_reviews(limit: int = 5, user=Depends(_require_seller)):
+    """Get recent reviews across all of the seller's products."""
+    db = get_db()
+    products_collection = _get_products_collection()
+    if db is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+    try:
+        seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1, "name": 1}))
+        seller_product_oids = [p.get("_id") for p in seller_products if p.get("_id")]
+        product_names = {str(p.get("_id")): p.get("name", "Unknown Product") for p in seller_products}
+
+        if not seller_product_oids:
+            return {"status": "success", "reviews": []}
+
+        reviews_collection = db["product_reviews"]
+        docs = list(
+            reviews_collection.find({"product_id": {"$in": seller_product_oids}})
+            .sort("created_at", -1)
+            .limit(limit)
+        )
+
+        reviews = []
+        for doc in docs:
+            reviews.append({
+                "id": str(doc.get("_id")),
+                "user_name": doc.get("user_name", "Anonymous"),
+                "rating": doc.get("rating", 0),
+                "comment": doc.get("comment", ""),
+                "product_name": product_names.get(str(doc.get("product_id")), "Unknown Product"),
+                "created_at": doc.get("created_at", ""),
+            })
+        return {"status": "success", "reviews": reviews}
+    except Exception as e:
+        print(f"Error in get_seller_recent_reviews: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/analytics/products/top")
+async def get_seller_top_products(page: int = 1, page_size: int = 4, user=Depends(_require_seller)):
+    """Get top selling products for seller dashboard."""
+    products_collection = _get_products_collection()
+
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    if page < 1 or page_size < 1 or page_size > 20:
+        raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+
+    seller_id = str(user.get("_id"))
+
+    try:
+        pipeline = [
+            {"$match": {"seller_id": seller_id, "is_disabled": {"$ne": True}}},
+            {"$sort": {"sold_count": -1}},
+        ]
+
+        all_products = list(products_collection.aggregate(pipeline))
+        total = len(all_products)
+
+        start = (page - 1) * page_size
+        paged_products = all_products[start: start + page_size]
+
+        products = []
+        for p in paged_products:
+            products.append({
+                "id": str(p.get("_id")),
+                "name": p.get("name", "Unknown Product"),
+                "sold": p.get("sold_count", 0),
+                "price": p.get("price", 0),
+                "stock": p.get("stock_qty", 0),
+                "category_name": p.get("category_name")
+            })
+
+        return {
+            "status": "success",
+            "products": products,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        print(f"Error in get_seller_top_products: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/analytics/store/details")
+async def get_seller_store_details(user=Depends(_require_seller)):
+    """Get store details: total stock, overall rating, total reviews, total sales."""
+    db = get_db()
+    products_collection = _get_products_collection()
+    orders_collection = _get_orders_collection()
+
+    if db is None or products_collection is None or orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+
+    try:
+        products = list(products_collection.find({"seller_id": seller_id, "is_disabled": {"$ne": True}}))
+        seller_product_ids = {str(p.get("_id")) for p in products}
+        seller_product_oids = [p.get("_id") for p in products if p.get("_id")]
+
+        total_stock = sum(int(p.get("stock_qty", 0)) for p in products)
+        max_stock_reference = max(total_stock, 100)
+
+        reviews_collection = db["product_reviews"]
+        total_reviews = 0
+        overall_rating = 0.0
+        if seller_product_oids:
+            total_reviews_res = list(reviews_collection.aggregate([
+                {"$match": {"product_id": {"$in": seller_product_oids}}},
+                {"$group": {"_id": None, "count": {"$sum": 1}, "avg": {"$avg": "$rating"}}},
+            ]))
+            if total_reviews_res:
+                total_reviews = total_reviews_res[0].get("count", 0)
+                overall_rating = round(total_reviews_res[0].get("avg", 0.0), 1)
+
+        total_sales = 0.0
+        total_orders_count = 0
+        if seller_product_ids:
+            for doc in orders_collection.find({}):
+                items = doc.get("items", [])
+                seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+                if seller_items:
+                    total_orders_count += 1
+                    total_sales += sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in seller_items)
+
+        avg_sales = round(total_sales / total_orders_count, 2) if total_orders_count > 0 else 0.0
+
+        return {
+            "status": "success",
+            "store": {
+                "total_stock": total_stock,
+                "overall_rating": overall_rating,
+                "total_reviews": total_reviews,
+                "max_stock_reference": max_stock_reference,
+            },
+            "orders": {
+                "total_sales": round(total_sales, 2),
+                "avg_sales": avg_sales,
+                "avg_orders": total_orders_count,
+                "max_sales_reference": max(round(total_sales), 1000),
+            }
+        }
+    except Exception as e:
+        print(f"Error in get_seller_store_details: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/analytics/sales/categories")
+async def get_seller_sales_by_category(user=Depends(_require_seller)):
+    """Get sales breakdown by category for seller dashboard."""
+    products_collection = _get_products_collection()
+
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+
+    try:
+        pipeline = [
+            {"$match": {"seller_id": seller_id, "is_disabled": {"$ne": True}}},
+            {"$group": {
+                "_id": "$category_name",
+                "total_sold": {"$sum": {"$ifNull": ["$sold_count", 0]}},
+            }},
+            {"$sort": {"total_sold": -1}},
+        ]
+
+        category_data = list(products_collection.aggregate(pipeline))
+        total_sold = sum(c.get("total_sold", 0) for c in category_data)
+
+        categories = []
+        for cat in category_data:
+            cat_name = cat.get("_id") or "Uncategorized"
+            cat_sold = cat.get("total_sold", 0)
+            percentage = round((cat_sold / total_sold * 100), 1) if total_sold > 0 else 0
+            categories.append({
+                "category": cat_name,
+                "sold": cat_sold,
+                "percentage": percentage
+            })
+
+        return {"status": "success", "categories": categories}
+    except Exception as e:
+        print(f"Error in get_seller_sales_by_category: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/analytics/sales/overview")
+async def get_seller_sales_overview(
+    year: Optional[int] = None,
+    half: Optional[int] = None,
+    granularity: str = "monthly",
+    days: int = 7,
+    count: int = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user=Depends(_require_seller)
+):
+    """Flexible sales chart data endpoint."""
+    from datetime import timedelta
+
+    orders_col = _get_orders_collection()
+    products_collection = _get_products_collection()
+    if orders_col is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+    now = datetime.utcnow()
+    current_year = now.year
+
+    try:
+        seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1}))
+        seller_product_ids = {str(p.get("_id")) for p in seller_products}
+        seller_product_oids = [p.get("_id") for p in seller_products if p.get("_id")]
+
+        seller_orders = list(orders_col.find({
+            "items.product_id": {"$in": list(seller_product_ids) + seller_product_oids},
+            "status": {"$in": ["confirmed", "shipped", "delivered"]}
+        }))
+
+        def _parse_created(raw):
+            if raw is None:
+                return None
+            if isinstance(raw, str):
+                try:
+                    return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+                except:
+                    return None
+            return raw
+
+        def _order_amount(order):
+            total = 0.0
+            for item in order.get("items", []):
+                pid = item.get("product_id")
+                if pid in seller_product_oids or str(pid) in seller_product_ids:
+                    total += float(item.get("price", 0)) * int(item.get("qty", 0))
+            return total
+
+        # Available years
+        years_set = set()
+        for order in seller_orders:
+            dt = _parse_created(order.get("created_at"))
+            if dt:
+                years_set.add(dt.year)
+        available_years = sorted(years_set, reverse=True) or [current_year]
+
+        # Custom date range
+        if start_date and end_date:
+            try:
+                range_start = datetime.fromisoformat(start_date)
+                range_end = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59)
+            except:
+                raise HTTPException(status_code=400, detail="Invalid start_date or end_date")
+            num_days = (range_end.date() - range_start.date()).days + 1
+            daily_totals = {}
+            cur = range_start.date()
+            for _ in range(num_days):
+                daily_totals[cur] = 0.0
+                cur += timedelta(days=1)
+            for order in seller_orders:
+                dt = _parse_created(order.get("created_at"))
+                if dt and range_start <= dt <= range_end:
+                    daily_totals[dt.date()] = daily_totals.get(dt.date(), 0.0) + _order_amount(order)
+            sales_data = [
+                {"period": d.strftime("%b %d"), "amount": round(daily_totals[d], 2)}
+                for d in sorted(daily_totals)
+            ]
+            total_orders_in_range = sum(1 for order in seller_orders if (lambda dt: dt and range_start <= dt <= range_end)(_parse_created(order.get("created_at"))))
+            return {"status": "success", "year": current_year, "half": None, "available_years": available_years, "data": sales_data, "total_orders": total_orders_in_range}
+
+        # Daily
+        if granularity == "daily":
+            day_count = max(1, min(days, 365))
+            today = now.date()
+            daily_totals = {}
+            for i in range(day_count - 1, -1, -1):
+                d = today - timedelta(days=i)
+                daily_totals[d] = 0.0
+            for order in seller_orders:
+                dt = _parse_created(order.get("created_at"))
+                if dt and dt.date() in daily_totals:
+                    daily_totals[dt.date()] += _order_amount(order)
+            sales_data = [
+                {"period": d.strftime("%b %d"), "amount": round(daily_totals[d], 2)}
+                for d in sorted(daily_totals)
+            ]
+            today_date = now.date()
+            range_s = today_date - timedelta(days=day_count - 1)
+            total_orders_in_range = sum(1 for order in seller_orders if (lambda dt: dt and range_s <= dt.date() <= today_date)(_parse_created(order.get("created_at"))))
+            return {"status": "success", "year": current_year, "half": None, "available_years": available_years, "data": sales_data, "total_orders": total_orders_in_range}
+
+        # Yearly
+        if granularity == "yearly":
+            year_count = max(1, min(count, 20))
+            yearly_totals = {y: 0.0 for y in range(current_year - year_count + 1, current_year + 1)}
+            for order in seller_orders:
+                dt = _parse_created(order.get("created_at"))
+                if dt and dt.year in yearly_totals:
+                    yearly_totals[dt.year] += _order_amount(order)
+            sales_data = [
+                {"period": str(y), "amount": round(yearly_totals[y], 2)}
+                for y in sorted(yearly_totals)
+            ]
+            total_orders_in_range = sum(1 for order in seller_orders if (lambda dt: dt and dt.year in yearly_totals)(_parse_created(order.get("created_at"))))
+            return {"status": "success", "year": current_year, "half": None, "available_years": available_years, "data": sales_data, "total_orders": total_orders_in_range}
+
+        # Monthly (default)
+        if year is None:
+            year = current_year
+        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        monthly_totals = {i: 0.0 for i in range(1, 13)}
+        for order in seller_orders:
+            dt = _parse_created(order.get("created_at"))
+            if dt and dt.year == year:
+                monthly_totals[dt.month] += _order_amount(order)
+        if half == 1:
+            months = list(range(1, 7))
+        elif half == 2:
+            months = list(range(7, 13))
+        else:
+            months = list(range(1, 13))
+        sales_data = [
+            {"period": month_names[m - 1], "amount": round(monthly_totals[m], 2)}
+            for m in months
+        ]
+        total_orders_in_range = sum(1 for order in seller_orders if (lambda dt: dt and dt.year == year and dt.month in months)(_parse_created(order.get("created_at"))))
+        return {"status": "success", "year": year, "half": half, "available_years": available_years, "data": sales_data, "total_orders": total_orders_in_range}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_seller_sales_overview: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+# ============================================
+# ADMIN ORDER ROUTES
+# ============================================
+
+async def _require_admin(authorization: Optional[str] = Header(None)):
+    """Require admin role."""
+    user = await _get_current_user_from_header(authorization)
+    role = (user.get("role") or "user").strip().lower()
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+@router.get("/admin/orders/stats")
+async def get_admin_orders_stats(user=Depends(_require_admin)):
+    """Get quick stats for admin orders dashboard."""
+    orders_collection = _get_orders_collection()
+
+    if orders_collection is None:
+        return {
+            "status": "success",
+            "stats": {
+                "total_orders": 0,
+                "pending_orders": 0,
+                "confirmed_orders": 0,
+                "shipped_orders": 0,
+                "delivered_orders": 0,
+                "cancelled_orders": 0,
+                "total_revenue": 0,
+                "total_sales": 0,
+                "avg_order_value": 0,
+            }
+        }
+
+    total_orders = orders_collection.count_documents({})
+    pending_orders = orders_collection.count_documents({"status": "pending"})
+    confirmed_orders = orders_collection.count_documents({"status": "confirmed"})
+    shipped_orders = orders_collection.count_documents({"status": "shipped"})
+    delivered_orders = orders_collection.count_documents({"status": "delivered"})
+    cancelled_orders = orders_collection.count_documents({"status": "cancelled"})
+
+    revenue_docs = list(orders_collection.find({"status": "delivered"}, {"total": 1}))
+    total_revenue = sum(float(doc.get("total", 0)) for doc in revenue_docs)
+
+    all_orders = list(orders_collection.find({}, {"total": 1}))
+    total_sales = sum(float(doc.get("total", 0)) for doc in all_orders)
+
+    avg_order_value = total_sales / total_orders if total_orders > 0 else 0
+
+    return {
+        "status": "success",
+        "stats": {
+            "total_orders": total_orders,
+            "pending_orders": pending_orders,
+            "confirmed_orders": confirmed_orders,
+            "shipped_orders": shipped_orders,
+            "delivered_orders": delivered_orders,
+            "cancelled_orders": cancelled_orders,
+            "total_revenue": total_revenue,
+            "total_sales": total_sales,
+            "avg_order_value": round(avg_order_value, 2),
+        }
+    }
+
+
+@router.get("/admin/orders/by-time")
+async def get_admin_orders_by_time(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    user=Depends(_require_admin)
+):
+    """Get orders grouped by day for heat map visualization."""
+    import calendar
+
+    orders_collection = _get_orders_collection()
+
+    if orders_collection is None:
+        return {"status": "success", "data": [], "year": year, "month": month}
+
+    now = datetime.utcnow()
+    if year is None:
+        year = now.year
+    if month is None:
+        month = now.month
+
+    first_day = datetime(year, month, 1)
+    last_day_num = calendar.monthrange(year, month)[1]
+    last_day = datetime(year, month, last_day_num, 23, 59, 59)
+
+    query = {
+        "created_at": {
+            "$gte": first_day.isoformat(),
+            "$lte": last_day.isoformat()
+        }
+    }
+
+    orders = list(orders_collection.find(query))
+
+    day_counts = {}
+    for order in orders:
+        created_at = order.get("created_at", "")
+        if created_at:
+            try:
+                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00").replace("+00:00", ""))
+                day_of_month = dt.day
+                day_of_week = dt.weekday()
+                key = f"{day_of_month}"
+                if key not in day_counts:
+                    day_counts[key] = {"day": day_of_month, "weekday": day_of_week, "count": 0, "total": 0}
+                day_counts[key]["count"] += 1
+                day_counts[key]["total"] += float(order.get("total", 0))
+            except:
+                pass
+
+    first_weekday = first_day.weekday()
+    weeks = []
+    current_day = 1
+
+    for week_idx in range(6):
+        week = []
+        for day_idx in range(7):
+            if week_idx == 0 and day_idx < first_weekday:
+                week.append({"day": None, "count": 0, "total": 0})
+            elif current_day > last_day_num:
+                week.append({"day": None, "count": 0, "total": 0})
+            else:
+                key = f"{current_day}"
+                data = day_counts.get(key, {"day": current_day, "weekday": day_idx, "count": 0, "total": 0})
+                week.append({
+                    "day": current_day,
+                    "count": data["count"],
+                    "total": round(data["total"], 2)
+                })
+                current_day += 1
+        weeks.append(week)
+        if current_day > last_day_num:
+            break
+
+    return {
+        "status": "success",
+        "year": year,
+        "month": month,
+        "month_name": calendar.month_name[month],
+        "weeks": weeks,
+        "max_count": max([d["count"] for w in weeks for d in w if d["day"] is not None], default=0)
+    }
+
+
+@router.get("/admin/orders")
+async def get_admin_orders(
+    page: int = 1,
+    page_size: int = 20,
+    status: str = "all",
+    seller: str = "all",
+    category: str = "all",
+    search: str = "",
+    user=Depends(_require_admin)
+):
+    """Get all orders for admin management with filters."""
+    orders_collection = _get_orders_collection()
+    products_collection = _get_products_collection()
+    users_collection = _get_users_collection()
+
+    if orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 50)
+
+    query = {}
+    if status != "all":
+        query["status"] = status
+
+    docs = list(orders_collection.find(query).sort("created_at", -1))
+
+    filtered_orders = []
+
+    for doc in docs:
+        order_id = str(doc.get("_id"))
+        user_id = doc.get("user_id")
+        items = doc.get("items", [])
+
+        buyer_name = "Unknown"
+        if user_id and users_collection:
+            try:
+                buyer_user = users_collection.find_one({"_id": ObjectId(user_id)})
+                if buyer_user:
+                    buyer_name = buyer_user.get("name", "Unknown")
+            except:
+                pass
+
+        seller_name = "Unknown"
+        order_category = ""
+
+        if items and products_collection:
+            first_item = items[0]
+            product_id = first_item.get("product_id")
+
+            if product_id:
+                try:
+                    product = products_collection.find_one({"_id": ObjectId(product_id)})
+                    if product:
+                        seller_id = product.get("seller_id")
+                        if seller_id and users_collection:
+                            try:
+                                seller_user = users_collection.find_one({"_id": ObjectId(seller_id)})
+                                if seller_user:
+                                    seller_name = seller_user.get("name", "Unknown")
+                            except:
+                                pass
+
+                        order_category = product.get("category", "")
+                except:
+                    pass
+
+        if seller != "all" and seller_name != seller:
+            continue
+        if category != "all" and order_category != category:
+            continue
+        if search and not (
+            order_id.lower().find(search.lower()) >= 0 or
+            buyer_name.lower().find(search.lower()) >= 0 or
+            seller_name.lower().find(search.lower()) >= 0
+        ):
+            continue
+
+        filtered_orders.append({
+            "id": order_id,
+            "order_number": doc.get("order_number", order_id[:8]),
+            "buyer_id": user_id or "",
+            "buyer_name": buyer_name,
+            "seller_id": "",
+            "seller_name": seller_name,
+            "category": order_category,
+            "status": doc.get("status", "pending"),
+            "total": float(doc.get("total", 0)),
+            "total_items": len(items),
+            "created_at": doc.get("created_at", ""),
+            "updated_at": doc.get("updated_at", ""),
+        })
+
+    total = len(filtered_orders)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated_orders = filtered_orders[start:end]
+
+    return {
+        "status": "success",
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "orders": paginated_orders,
+    }
+
+
+@router.get("/admin/orders/{order_id}")
+async def get_admin_order_detail(order_id: str, user=Depends(_require_admin)):
+    """Get detailed order information for admin view."""
+    orders_collection = _get_orders_collection()
+    users_collection = _get_users_collection()
+    products_collection = _get_products_collection()
+
+    if orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(order_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid order ID")
+
+    order_doc = orders_collection.find_one({"_id": oid})
+    if not order_doc:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    user_id = order_doc.get("user_id")
+    buyer_name = "Unknown"
+
+    if user_id and users_collection:
+        try:
+            buyer_user = users_collection.find_one({"_id": ObjectId(user_id)})
+            if buyer_user:
+                buyer_name = buyer_user.get("name", "Unknown")
+        except:
+            pass
+
+    seller_name = "Unknown"
+    category = "General"
+    items = order_doc.get("items", [])
+
+    if items and products_collection:
+        first_item = items[0]
+        product_id = first_item.get("product_id")
+
+        if product_id:
+            try:
+                product = products_collection.find_one({"_id": ObjectId(product_id)})
+                if product:
+                    category = product.get("category", "General")
+                    seller_id = product.get("seller_id")
+                    if seller_id and users_collection:
+                        try:
+                            seller_user = users_collection.find_one({"_id": ObjectId(seller_id)})
+                            if seller_user:
+                                seller_name = seller_user.get("name", "Unknown")
+                        except:
+                            pass
+            except:
+                pass
+
+    return {
+        "status": "success",
+        "order": {
+            "id": str(order_doc["_id"]),
+            "order_number": order_doc.get("order_number", str(order_doc["_id"])[:8]),
+            "buyer_id": user_id or "",
+            "buyer_name": buyer_name,
+            "seller_id": "",
+            "seller_name": seller_name,
+            "category": category,
+            "status": order_doc.get("status", "pending"),
+            "total": float(order_doc.get("total", 0)),
+            "total_items": len(items),
+            "payment_method": order_doc.get("payment_method", ""),
+            "address": order_doc.get("address", {}),
+            "items": items,
+            "created_at": order_doc.get("created_at", ""),
+            "updated_at": order_doc.get("updated_at", ""),
+        }
+    }
+
+
+class AdminOrderStatusUpdateBody(BaseModel):
+    status: str
+
+
+@router.put("/admin/orders/{order_id}/status")
+async def update_admin_order_status(order_id: str, body: AdminOrderStatusUpdateBody, user=Depends(_require_admin)):
+    """Update order status (admin only)."""
+    orders_collection = _get_orders_collection()
+
+    if orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(order_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid order ID")
+
+    order_doc = orders_collection.find_one({"_id": oid})
+    if not order_doc:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    new_status = body.status
+    valid_statuses = ["pending", "confirmed", "shipped", "delivered", "cancelled"]
+
+    if new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    update_data = {
+        "status": new_status,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    orders_collection.update_one({"_id": oid}, {"$set": update_data})
+
+    return {
+        "status": "success",
+        "new_status": new_status,
+        "message": f"Order status updated to {new_status}",
+        "order": _normalize_order(orders_collection.find_one({"_id": oid}))
+    }

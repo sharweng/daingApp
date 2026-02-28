@@ -393,6 +393,216 @@ export const getCurrentUser = async (
   }
 };
 
+// ============================================
+// FIREBASE-BASED AUTHENTICATION (Synced with Web)
+// ============================================
+
+import {
+  firebaseRegister,
+  firebaseLogin,
+  firebaseLogout,
+  getFirebaseToken,
+  auth as firebaseAuth,
+} from "./firebase";
+
+/**
+ * Register with Firebase and sync with backend MongoDB.
+ * This creates the user in Firebase Auth (same as web) and then
+ * creates/updates the user profile in MongoDB.
+ */
+export const registerWithFirebase = async (
+  baseUrl: string,
+  name: string,
+  email: string,
+  password: string,
+): Promise<AuthResponse> => {
+  try {
+    // Step 1: Create user in Firebase Auth
+    const { token } = await firebaseRegister(email, password);
+
+    // Step 2: Sync with backend - create user profile in MongoDB
+    const response = await axios.post(
+      `${normalizeUrl(baseUrl)}/auth/register-firebase`,
+      {
+        name: name,
+        email: email,
+        role: "user",
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        timeout: 10000,
+      },
+    );
+
+    const data = response.data;
+
+    // Set the Firebase token for future API calls
+    setAuthToken(token);
+
+    return {
+      status: "success",
+      token: token,
+      user: mapWebUserToMobileUser(data.user),
+      message: "Account created successfully! Please verify your email.",
+    };
+  } catch (error: any) {
+    // Handle Firebase-specific errors
+    if (error.code === "auth/email-already-in-use") {
+      return { status: "error", message: "Email is already registered" };
+    }
+    if (error.code === "auth/invalid-email") {
+      return { status: "error", message: "Invalid email address" };
+    }
+    if (error.code === "auth/weak-password") {
+      return {
+        status: "error",
+        message: "Password should be at least 6 characters",
+      };
+    }
+    return {
+      status: "error",
+      message: extractErrorMessage(error, "Registration failed"),
+    };
+  }
+};
+
+/**
+ * Login with Firebase and sync with backend.
+ * Uses Firebase Auth (same as web) and validates against MongoDB.
+ */
+export const loginWithFirebase = async (
+  baseUrl: string,
+  email: string,
+  password: string,
+): Promise<AuthResponse> => {
+  try {
+    // Step 1: Login with Firebase
+    const { token, emailVerified } = await firebaseLogin(email, password);
+
+    // Set the Firebase token for the API call
+    setAuthToken(token);
+
+    // Step 2: Get user profile from backend (validates user exists in MongoDB)
+    const response = await axios.get(`${normalizeUrl(baseUrl)}/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      timeout: 10000,
+    });
+
+    const data = response.data;
+    const user = mapWebUserToMobileUser(data.user || data);
+
+    return {
+      status: "success",
+      token: token,
+      user: user,
+      message: emailVerified ? undefined : "Please verify your email address",
+    };
+  } catch (error: any) {
+    // Handle Firebase-specific errors
+    if (
+      error.code === "auth/invalid-credential" ||
+      error.code === "auth/user-not-found" ||
+      error.code === "auth/wrong-password"
+    ) {
+      return { status: "error", message: "Invalid email or password" };
+    }
+    if (error.code === "auth/invalid-email") {
+      return { status: "error", message: "Invalid email address" };
+    }
+    if (error.code === "auth/too-many-requests") {
+      return {
+        status: "error",
+        message: "Too many failed attempts. Please try again later.",
+      };
+    }
+
+    // Check if it's a backend 401 error (user not in MongoDB)
+    if (error.response?.status === 401) {
+      // User exists in Firebase but not in MongoDB - try to register them
+      try {
+        const token = await getFirebaseToken();
+        if (token) {
+          const firebaseUser = firebaseAuth.currentUser;
+          const name = firebaseUser?.displayName || email.split("@")[0];
+
+          const registerResponse = await axios.post(
+            `${normalizeUrl(baseUrl)}/auth/register-firebase`,
+            {
+              name: name,
+              email: email,
+              role: "user",
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              timeout: 10000,
+            },
+          );
+
+          return {
+            status: "success",
+            token: token,
+            user: mapWebUserToMobileUser(registerResponse.data.user),
+          };
+        }
+      } catch {
+        // Ignore registration errors, fall through to original error
+      }
+      return {
+        status: "error",
+        message: "Account not found. Please register first.",
+      };
+    }
+
+    return {
+      status: "error",
+      message: extractErrorMessage(error, "Login failed"),
+    };
+  }
+};
+
+/**
+ * Logout from Firebase and backend.
+ */
+export const logoutWithFirebase = async (
+  baseUrl: string,
+): Promise<AuthResponse> => {
+  try {
+    // Logout from backend first
+    await axios.post(`${normalizeUrl(baseUrl)}/auth/logout`, null, {
+      headers: getAuthHeaders(),
+      timeout: 10000,
+    });
+  } catch {
+    // Ignore backend logout errors
+  }
+
+  // Always logout from Firebase
+  await firebaseLogout();
+  setAuthToken(null);
+
+  return { status: "success", message: "Logged out successfully" };
+};
+
+/**
+ * Refresh Firebase token and update auth header.
+ * Call this periodically or before making authenticated requests.
+ */
+export const refreshFirebaseToken = async (): Promise<string | null> => {
+  const token = await getFirebaseToken();
+  if (token) {
+    setAuthToken(token);
+  }
+  return token;
+};
+
 export const fetchAllHistory = async (
   baseUrl: string,
 ): Promise<HistoryEntry[]> => {
@@ -479,6 +689,10 @@ export const getCatalogProductDetail = async (
   baseUrl: string,
   productId: string,
 ): Promise<SellerProduct | null> => {
+  if (!productId) {
+    console.error("getCatalogProductDetail called with empty productId");
+    return null;
+  }
   try {
     const response = await axios.get(
       `${normalizeUrl(baseUrl)}/catalog/products/${productId}`,
@@ -548,6 +762,10 @@ export const getProductReviews = async (
   page: number = 1,
   pageSize: number = 5,
 ): Promise<{ reviews: ProductReview[]; total: number }> => {
+  if (!productId) {
+    console.error("getProductReviews called with empty productId");
+    return { reviews: [], total: 0 };
+  }
   try {
     const response = await axios.get(
       `${normalizeUrl(baseUrl)}/catalog/products/${productId}/reviews`,
@@ -609,6 +827,10 @@ export const checkWishlist = async (
   baseUrl: string,
   productId: string,
 ): Promise<boolean> => {
+  if (!productId) {
+    console.error("checkWishlist called with empty productId");
+    return false;
+  }
   try {
     const response = await axios.get(
       `${normalizeUrl(baseUrl)}/wishlist/check/${productId}`,
@@ -777,7 +999,12 @@ export const getOrderById = async (
   baseUrl: string,
   orderId: string,
 ): Promise<OrderDetail | null> => {
+  if (!orderId) {
+    console.error("getOrderById called with empty orderId");
+    return null;
+  }
   try {
+    console.log("Fetching order:", orderId);
     const response = await axios.get(
       `${normalizeUrl(baseUrl)}/orders/${orderId}`,
       {
@@ -785,8 +1012,46 @@ export const getOrderById = async (
         timeout: 10000,
       },
     );
-    return response.data.order || null;
+    const order = response.data.order;
+    if (!order) return null;
+
+    // Map backend response to OrderDetail format
+    return {
+      id: order.id,
+      order_number: order.order_number,
+      orderNumber: order.order_number,
+      seller_id: order.seller_id,
+      seller_name: order.seller_name,
+      status: order.status,
+      total: order.total,
+      total_items: order.total_items,
+      payment_method: order.payment_method,
+      paymentMethod: order.payment_method,
+      address: {
+        fullName: order.address?.full_name || order.address?.fullName || "",
+        phone: order.address?.phone || "",
+        address: order.address?.address_line || order.address?.address || "",
+        city: order.address?.city || "",
+        province: order.address?.province || "",
+        postalCode:
+          order.address?.postal_code || order.address?.postalCode || "",
+        notes: order.address?.notes || "",
+      },
+      items: (order.items || []).map((item: any) => ({
+        product_id: item.product_id,
+        name: item.name || item.product_name,
+        quantity: item.quantity || item.qty,
+        price: item.price,
+        image: item.image || item.image_url,
+      })),
+      created_at: order.created_at,
+      dateOrdered: order.created_at,
+      subtotal: order.subtotal || order.total,
+      shippingFee: order.shipping_fee || 0,
+      discount: order.discount || 0,
+    } as OrderDetail;
   } catch (error) {
+    console.error("Error fetching order:", error);
     return null;
   }
 };

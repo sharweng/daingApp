@@ -100,7 +100,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   const handleLogin = async () => {
     if (!username.trim()) {
-      Alert.alert("Error", "Please enter your username or email");
+      Alert.alert("Error", "Please enter your email");
       return;
     }
     if (!password.trim()) {
@@ -141,19 +141,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         <View style={styles.form}>
           <View style={styles.inputContainer}>
             <Ionicons
-              name="person-outline"
+              name="mail-outline"
               size={20}
               color={theme.colors.textMuted}
               style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
-              placeholder="Username or Email"
+              placeholder="Email"
               placeholderTextColor={theme.colors.textMuted}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
               autoCorrect={false}
+              keyboardType="email-address"
             />
           </View>
 

@@ -1,26 +1,34 @@
+import {
+  SERVER_BASE_URL,
+  GOOGLE_WEB_CLIENT_ID,
+  FIREBASE_API_KEY,
+  FIREBASE_AUTH_DOMAIN,
+  FIREBASE_PROJECT_ID,
+  FIREBASE_STORAGE_BUCKET,
+  FIREBASE_MESSAGING_SENDER_ID,
+  FIREBASE_APP_ID,
+} from "@env";
+
 // Default server base URL (can be customized in settings)
-export const DEFAULT_SERVER_BASE_URL = "http://192.168.1.114:8000"; //http://192.168.1.114:8000
+export const DEFAULT_SERVER_BASE_URL =
+  SERVER_BASE_URL || "http://localhost:8000";
 
 // API Base URL for ecommerce features
 export const API_BASE_URL = DEFAULT_SERVER_BASE_URL;
 
-// Google OAuth Client IDs (from Firebase Console → Authentication → Sign-in method → Google)
-// The Web Client ID is shown when you enable Google sign-in in Firebase
-// It looks like: XXXXXXXXX-XXXXXXXX.apps.googleusercontent.com
+// Google OAuth Client IDs
 export const GOOGLE_CLIENT_ID = {
-  // Get this from: Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID
-  webClientId:
-    "1086621509748-507rcjefn14ng4sc3mtjlsgj8o6ju2o9.apps.googleusercontent.com",
+  webClientId: GOOGLE_WEB_CLIENT_ID || "",
 };
 
 // Firebase Configuration (same as web for unified auth)
 export const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCsdSxrDeN0Z9QDycW5VpcluxSlEH6qaxc",
-  authDomain: "dainggrader-auth.firebaseapp.com",
-  projectId: "dainggrader-auth",
-  storageBucket: "dainggrader-auth.firebasestorage.app",
-  messagingSenderId: "1086621509748",
-  appId: "1:1086621509748:web:380a81b3b561690e920921",
+  apiKey: FIREBASE_API_KEY || "",
+  authDomain: FIREBASE_AUTH_DOMAIN || "",
+  projectId: FIREBASE_PROJECT_ID || "",
+  storageBucket: FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: FIREBASE_APP_ID || "",
 };
 
 const normalizeBaseUrl = (baseUrl: string) =>

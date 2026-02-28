@@ -15,7 +15,12 @@ import {
   logoutUser as apiLogout,
   googleSignIn as apiGoogleSignIn,
   getCurrentUser,
+  registerWithFirebase,
+  loginWithFirebase,
+  logoutWithFirebase,
+  refreshFirebaseToken,
 } from "../services/api";
+import { auth as firebaseAuth, getFirebaseToken } from "../services/firebase";
 
 interface AuthContextType extends AuthState {
   login: (
@@ -81,6 +86,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       setState((prev) => ({ ...prev, isLoading: true }));
 
       try {
+        // First, check if there's a Firebase user logged in
+        const firebaseUser = firebaseAuth.currentUser;
+        if (firebaseUser) {
+          // Refresh the Firebase token
+          const token = await getFirebaseToken();
+          if (token) {
+            setAuthToken(token);
+
+            // Validate with backend
+            const response = await getCurrentUser(baseUrl);
+            if (response.status === "success" && response.user) {
+              await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+              await AsyncStorage.setItem(
+                AUTH_USER_KEY,
+                JSON.stringify(response.user),
+              );
+
+              setState({
+                user: response.user,
+                token,
+                isLoading: false,
+                isAuthenticated: true,
+              });
+              return;
+            }
+          }
+        }
+
+        // Fall back to stored token
         const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
         const userJson = await AsyncStorage.getItem(AUTH_USER_KEY);
 
@@ -134,7 +168,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     [clearAuthData],
   );
 
-  // Login
+  // Login - uses Firebase for unified web/mobile auth
   const login = useCallback(
     async (
       baseUrl: string,
@@ -143,7 +177,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     ): Promise<AuthResponse> => {
       setState((prev) => ({ ...prev, isLoading: true }));
 
-      const response = await apiLogin(baseUrl, username, password);
+      // Use Firebase-based login (username is email for Firebase)
+      const response = await loginWithFirebase(baseUrl, username, password);
 
       if (response.status === "success" && response.user && response.token) {
         await saveAuthData(response.user, response.token);
@@ -162,7 +197,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     [saveAuthData],
   );
 
-  // Register
+  // Register - uses Firebase for unified web/mobile auth
   const register = useCallback(
     async (
       baseUrl: string,
@@ -172,7 +207,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     ): Promise<AuthResponse> => {
       setState((prev) => ({ ...prev, isLoading: true }));
 
-      const response = await apiRegister(baseUrl, username, email, password);
+      // Use Firebase-based registration (username is used as display name)
+      const response = await registerWithFirebase(
+        baseUrl,
+        username,
+        email,
+        password,
+      );
 
       if (response.status === "success" && response.user && response.token) {
         await saveAuthData(response.user, response.token);
@@ -219,12 +260,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     [saveAuthData],
   );
 
-  // Logout
+  // Logout - logs out from both Firebase and backend
   const logout = useCallback(
     async (baseUrl: string) => {
       setState((prev) => ({ ...prev, isLoading: true }));
 
-      await apiLogout(baseUrl);
+      await logoutWithFirebase(baseUrl);
       await clearAuthData();
 
       setState({

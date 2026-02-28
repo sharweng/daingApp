@@ -240,6 +240,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 setAddress((prev) => ({ ...prev, full_name: text }))
               }
               placeholder="Enter full name"
+              placeholderTextColor="#94A3B8"
             />
           </View>
 
@@ -252,6 +253,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 setAddress((prev) => ({ ...prev, phone: text }))
               }
               placeholder="Enter phone number"
+              placeholderTextColor="#94A3B8"
               keyboardType="phone-pad"
             />
           </View>
@@ -265,6 +267,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 setAddress((prev) => ({ ...prev, address_line: text }))
               }
               placeholder="House/Unit No., Street, Barangay"
+              placeholderTextColor="#94A3B8"
               multiline
             />
           </View>
@@ -279,6 +282,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                   setAddress((prev) => ({ ...prev, city: text }))
                 }
                 placeholder="City"
+                placeholderTextColor="#94A3B8"
               />
             </View>
             <View style={[styles.formGroup, { flex: 1 }]}>
@@ -290,6 +294,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                   setAddress((prev) => ({ ...prev, province: text }))
                 }
                 placeholder="Province"
+                placeholderTextColor="#94A3B8"
               />
             </View>
           </View>
@@ -303,6 +308,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 setAddress((prev) => ({ ...prev, postal_code: text }))
               }
               placeholder="Postal code"
+              placeholderTextColor="#94A3B8"
               keyboardType="number-pad"
             />
           </View>
@@ -316,6 +322,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 setAddress((prev) => ({ ...prev, notes: text }))
               }
               placeholder="Delivery instructions, landmarks, etc."
+              placeholderTextColor="#94A3B8"
               multiline
             />
           </View>
@@ -337,7 +344,11 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 onPress={() => setPaymentMethod(method.id)}
               >
                 <View style={styles.listItemIcon}>
-                  <Ionicons name={method.icon as any} size={20} color="#FFFFFF" />
+                  <Ionicons
+                    name={method.icon as any}
+                    size={20}
+                    color="#FFFFFF"
+                  />
                 </View>
                 <View style={styles.listItemContent}>
                   <Text style={styles.listItemTitle}>{method.label}</Text>
@@ -358,6 +369,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                 value={voucherCode}
                 onChangeText={setVoucherCode}
                 placeholder="Enter voucher code"
+                placeholderTextColor="#94A3B8"
                 autoCapitalize="characters"
               />
               <TouchableOpacity

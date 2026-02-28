@@ -12,9 +12,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { OrderDetail, Screen } from "../../types";
 import { getOrderById, cancelOrder } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   orderId: string;
+  serverBaseUrl?: string;
   onNavigate: (screen: Screen, params?: any) => void;
   onBack: () => void;
 }
@@ -39,6 +41,7 @@ const statusIcons: Record<string, string> = {
 
 export default function OrderDetailScreen({
   orderId,
+  serverBaseUrl = API_BASE_URL,
   onNavigate,
   onBack,
 }: Props) {
@@ -48,12 +51,17 @@ export default function OrderDetailScreen({
 
   useEffect(() => {
     loadOrder();
-  }, [orderId]);
+  }, [orderId, serverBaseUrl]);
 
   const loadOrder = async () => {
+    if (!orderId) {
+      setLoading(false);
+      console.error("loadOrder called with empty orderId");
+      return;
+    }
     try {
       setLoading(true);
-      const data = await getOrderById(orderId);
+      const data = await getOrderById(serverBaseUrl, orderId);
       setOrder(data);
     } catch (err) {
       console.error("Failed to load order:", err);
@@ -73,7 +81,7 @@ export default function OrderDetailScreen({
         onPress: async () => {
           try {
             setCancelling(true);
-            await cancelOrder(order.id);
+            await cancelOrder(serverBaseUrl, order.id);
             await loadOrder();
             Alert.alert("Success", "Order cancelled successfully");
           } catch (err) {

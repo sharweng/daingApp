@@ -336,12 +336,15 @@ export interface CartItem {
 
 // Order types
 export interface OrderAddress {
-  full_name: string;
+  full_name?: string;
+  fullName?: string;
   phone: string;
-  address_line: string;
+  address_line?: string;
+  address?: string;
   city: string;
   province: string;
-  postal_code: string;
+  postal_code?: string;
+  postalCode?: string;
   notes?: string;
 }
 
@@ -351,22 +354,30 @@ export interface OrderItem {
   seller_name?: string;
   name: string;
   price: number;
-  qty: number;
+  qty?: number;
+  quantity?: number;
   image_url?: string;
+  image?: string;
 }
 
 export interface OrderDetail {
   id: string;
   order_number: string;
+  orderNumber?: string;
   seller_id?: string;
   seller_name?: string;
   status: string;
   total: number;
   total_items: number;
   payment_method: string;
+  paymentMethod?: string;
   address: OrderAddress;
   items: OrderItem[];
   created_at: string;
+  dateOrdered?: string;
+  subtotal?: number;
+  shippingFee?: number;
+  discount?: number;
 }
 
 // Community types
