@@ -218,7 +218,7 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
             <Image
               key={index}
               source={{ uri: img.url }}
-              style={styles.detailImage}
+              style={[styles.detailImage, { width: width }]}
               resizeMode="cover"
             />
           ))}

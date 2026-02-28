@@ -388,7 +388,18 @@ def get_catalog_products(
 
     query: Dict[str, Any] = {"is_disabled": {"$ne": True}, "status": "available"}
     if search:
-        query["name"] = {"$regex": re.escape(search), "$options": "i"}
+        # Search by name or seller_name
+        search_conditions = [
+            {"name": {"$regex": re.escape(search), "$options": "i"}},
+            {"seller_name": {"$regex": re.escape(search), "$options": "i"}},
+        ]
+        # Also try to search by price if search is a number
+        try:
+            price_value = float(search.replace(",", "").replace("₱", "").strip())
+            search_conditions.append({"price": price_value})
+        except (ValueError, AttributeError):
+            pass  # Not a valid price, skip price search
+        query["$or"] = search_conditions
     if category_id:
         try:
             query["category_id"] = ObjectId(category_id)

@@ -114,7 +114,7 @@ export default function OrderSuccessScreen({
           width: "100%",
           alignItems: "center",
         }}
-        onPress={() => onNavigate("catalog")}
+        onPress={() => onNavigate("home", { defaultTab: "market" })}
       >
         <Text style={{ color: "#3B82F6", fontSize: 16, fontWeight: "600" }}>
           Continue Shopping

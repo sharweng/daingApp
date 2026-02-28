@@ -308,6 +308,12 @@ export default function Index() {
   }
 
   if (currentScreen === "home") {
+    // Set default tab if specified in navigation params
+    if (navParams.defaultTab && navParams.defaultTab !== activeTab) {
+      setActiveTab(navParams.defaultTab);
+      setNavParams({}); // Clear the param after using it
+    }
+
     // Handle tab change
     const handleTabChange = (tab: TabName) => {
       setActiveTab(tab);

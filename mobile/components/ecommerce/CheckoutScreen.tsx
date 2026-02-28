@@ -201,7 +201,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
           <Text style={styles.emptyText}>Your cart is empty</Text>
           <TouchableOpacity
             style={[styles.primaryButton, { marginTop: 16 }]}
-            onPress={() => onNavigate("catalog")}
+            onPress={() => onNavigate("home", { defaultTab: "market" })}
           >
             <Text style={styles.primaryButtonText}>Browse Products</Text>
           </TouchableOpacity>

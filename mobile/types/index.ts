@@ -606,4 +606,5 @@ export interface NavigationParams {
   sellerId?: string;
   voucherId?: string;
   daingSlug?: string;
+  defaultTab?: "scan" | "market" | "community";
 }

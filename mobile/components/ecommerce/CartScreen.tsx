@@ -235,7 +235,7 @@ export const CartScreen: React.FC<CartScreenProps> = ({
           </Text>
           <TouchableOpacity
             style={[styles.primaryButton, { marginTop: 16 }]}
-            onPress={() => onNavigate("catalog")}
+            onPress={() => onNavigate("home", { defaultTab: "market" })}
           >
             <Text style={styles.primaryButtonText}>Browse Products</Text>
           </TouchableOpacity>
