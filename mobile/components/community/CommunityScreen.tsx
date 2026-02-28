@@ -24,6 +24,7 @@ const POST_IMAGE_SIZE = (width - 48) / 2;
 interface CommunityScreenProps {
   onNavigate: (screen: Screen, params?: any) => void;
   onBack: () => void;
+  isTab?: boolean;
 }
 
 const CATEGORIES = [
@@ -38,6 +39,7 @@ const CATEGORIES = [
 export const CommunityScreen: React.FC<CommunityScreenProps> = ({
   onNavigate,
   onBack,
+  isTab = false,
 }) => {
   const { isAuthenticated, user } = useAuth();
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -225,7 +227,9 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({
               </View>
             )}
             <View>
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
+              <Text
+                style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}
+              >
                 {item.author_name}
               </Text>
               <Text style={{ fontSize: 12, color: "#888" }}>
@@ -281,16 +285,18 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Community</Text>
-        <TouchableOpacity onPress={() => onNavigate("communityCreate")}>
-          <Ionicons name="add-circle-outline" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+      {/* Header - only show when not used as tab */}
+      {!isTab && (
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Community</Text>
+          <TouchableOpacity onPress={() => onNavigate("communityCreate")}>
+            <Ionicons name="add-circle-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Search */}
       <View style={styles.searchContainer}>

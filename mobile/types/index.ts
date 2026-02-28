@@ -18,6 +18,13 @@ export type Screen =
   | "userOrders"
   | "orderDetail"
   | "userActivity"
+  // Settings screens
+  | "settings"
+  | "appSettings"
+  | "aboutDaing"
+  | "publications"
+  | "aboutUs"
+  | "contact"
   // Seller screens
   | "sellerDashboard"
   | "sellerProducts"
@@ -47,10 +54,8 @@ export type Screen =
   | "myPosts"
   // Seller store (public)
   | "sellerStore"
-  // Other
-  | "contact"
-  | "about"
-  | "publications";
+  // Other (deprecated - use new screens)
+  | "about";
 
 export type UserRole = "user" | "admin" | "seller";
 
@@ -595,8 +600,10 @@ export interface Voucher {
 export interface NavigationParams {
   productId?: string;
   orderId?: string;
+  orderNumber?: string;
   postId?: string;
   userId?: string;
   sellerId?: string;
   voucherId?: string;
+  daingSlug?: string;
 }

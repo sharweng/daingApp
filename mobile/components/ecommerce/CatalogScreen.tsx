@@ -25,6 +25,7 @@ import { ecommerceStyles as styles } from "../../styles/ecommerce";
 interface CatalogScreenProps {
   onNavigate: (screen: Screen, params?: any) => void;
   onBack: () => void;
+  isTab?: boolean;
 }
 
 type SortOption = "latest" | "most_sold" | "price_low" | "price_high";
@@ -32,6 +33,7 @@ type SortOption = "latest" | "most_sold" | "price_low" | "price_high";
 export default function CatalogScreen({
   onNavigate,
   onBack,
+  isTab = false,
 }: CatalogScreenProps) {
   const { isAuthenticated } = useAuth();
   const [products, setProducts] = useState<SellerProduct[]>([]);
@@ -178,21 +180,23 @@ export default function CatalogScreen({
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Shop</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={() => onNavigate("wishlist")}>
-            <Ionicons name="heart-outline" size={24} color="#FFFFFF" />
+      {/* Header - only show when not used as tab */}
+      {!isTab && (
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => onNavigate("cart")}>
-            <Ionicons name="cart-outline" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Shop</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => onNavigate("wishlist")}>
+              <Ionicons name="heart-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onNavigate("cart")}>
+              <Ionicons name="cart-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Search */}
       <View style={styles.searchContainer}>

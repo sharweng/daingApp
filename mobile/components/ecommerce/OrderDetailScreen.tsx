@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
+import { theme } from "../../styles/theme";
 import { OrderDetail, Screen } from "../../types";
 import { getOrderById, cancelOrder } from "../../services/api";
 import { API_BASE_URL } from "../../constants/config";
@@ -111,11 +112,11 @@ export default function OrderDetailScreen({
     return (
       <View style={ecommerceStyles.container}>
         <View style={ecommerceStyles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Ionicons name="arrow-back" size={24} color="#1E293B" />
+          <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
+            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={ecommerceStyles.headerTitle}>Order Not Found</Text>
-          <View style={{ width: 24 }} />
+          <View style={{ width: theme.header.backButtonSize }} />
         </View>
       </View>
     );
@@ -127,13 +128,13 @@ export default function OrderDetailScreen({
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#1E293B" />
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>
           Order #{order.orderNumber}
         </Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: theme.header.backButtonSize }} />
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>

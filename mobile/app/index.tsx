@@ -12,13 +12,19 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { commonStyles, theme } from "../styles/common";
 // Core screens
-import { HomeScreen } from "../components/core/HomeScreen";
 import { ScanScreen } from "../components/core/ScanScreen";
 import { AnalyticsScreen } from "../components/core/AnalyticsScreen";
 import { HistoryScreen } from "../components/core/HistoryScreen";
 import { AutoDatasetScreen } from "../components/core/AutoDatasetScreen";
+import ScanTabScreen from "../components/core/ScanTabScreen";
 // Shared components
-import { SettingsModal } from "../components/shared/SettingsModal";
+import TabBar from "../components/shared/TabBar";
+import SettingsScreen from "../components/shared/SettingsScreen";
+import AppSettingsScreen from "../components/shared/AppSettingsScreen";
+import AboutDaingScreen from "../components/shared/AboutDaingScreen";
+import PublicationsScreen from "../components/shared/PublicationsScreen";
+import ContactScreen from "../components/shared/ContactScreen";
+import AboutUsScreen from "../components/shared/AboutUsScreen";
 // Auth screens
 import { LoginScreen } from "../components/auth/LoginScreen";
 import { RegisterScreen } from "../components/auth/RegisterScreen";
@@ -60,6 +66,8 @@ import type {
   NavigationParams,
 } from "../types";
 
+type TabName = "scan" | "market" | "community";
+
 export default function Index() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -77,13 +85,15 @@ export default function Index() {
     restoreSession,
   } = useAuth();
 
-  // Navigation & Settings
+  // Tab navigation
+  const [activeTab, setActiveTab] = useState<TabName>("scan");
+
+  // Screen navigation & Settings
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
   const [navParams, setNavParams] = useState<NavigationParams>({});
   const [screenHistory, setScreenHistory] = useState<
     { screen: Screen; params: NavigationParams }[]
   >([]);
-  const [showSettings, setShowSettings] = useState(false);
   const [autoSaveDataset, setAutoSaveDataset] = useState(false);
   const [serverBaseUrl, setServerBaseUrl] = useState(DEFAULT_SERVER_BASE_URL);
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.7);
@@ -298,31 +308,164 @@ export default function Index() {
   }
 
   if (currentScreen === "home") {
+    // Handle tab change
+    const handleTabChange = (tab: TabName) => {
+      setActiveTab(tab);
+    };
+
+    // Render tab content
+    const renderTabContent = () => {
+      switch (activeTab) {
+        case "market":
+          return (
+            <CatalogScreen
+              onNavigate={navigate}
+              onBack={() => setActiveTab("scan")}
+              isTab={true}
+            />
+          );
+        case "community":
+          return (
+            <CommunityScreen
+              onNavigate={navigate}
+              onBack={() => setActiveTab("scan")}
+              isTab={true}
+            />
+          );
+        case "scan":
+        default:
+          return (
+            <ScanTabScreen
+              onNavigate={navigate}
+              autoSaveDataset={autoSaveDataset}
+              user={user}
+            />
+          );
+      }
+    };
+
     return (
-      <>
-        <HomeScreen
-          onNavigate={navigate}
-          onOpenSettings={() => setShowSettings(true)}
-          autoSaveDataset={autoSaveDataset}
-          user={user}
-          onLogout={handleLogout}
-        />
-        <SettingsModal
-          visible={showSettings}
-          autoSaveDataset={autoSaveDataset}
-          serverBaseUrl={serverBaseUrl}
-          confidenceThreshold={confidenceThreshold}
-          hideColorOverlay={hideColorOverlay}
-          onToggleAutoSaveDataset={() => setAutoSaveDataset(!autoSaveDataset)}
-          onSetServerUrl={setServerBaseUrl}
-          onSetConfidenceThreshold={setConfidenceThreshold}
-          onToggleHideColorOverlay={() =>
-            setHideColorOverlay(!hideColorOverlay)
-          }
-          onClose={() => setShowSettings(false)}
-        />
-      </>
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        {/* Header */}
+        <View style={styles.homeHeader}>
+          <Text style={styles.homeHeaderTitle}>DaingGrader</Text>
+          <View style={styles.headerRightSection}>
+            {/* Dynamic buttons based on active tab */}
+            {activeTab === "market" && isAuthenticated && (
+              <>
+                <TouchableOpacity
+                  style={styles.headerIconButton}
+                  onPress={() => navigate("wishlist")}
+                >
+                  <Ionicons
+                    name="heart-outline"
+                    size={24}
+                    color={theme.colors.text}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.headerIconButton}
+                  onPress={() => navigate("cart")}
+                >
+                  <Ionicons
+                    name="cart-outline"
+                    size={24}
+                    color={theme.colors.text}
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+            {activeTab === "community" && isAuthenticated && (
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={() => navigate("communityCreate")}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={24}
+                  color={theme.colors.text}
+                />
+              </TouchableOpacity>
+            )}
+            {/* Settings/Avatar button */}
+            <TouchableOpacity
+              style={styles.headerSettingsButton}
+              onPress={() => navigate("settings")}
+            >
+              {user ? (
+                <View style={styles.headerAvatar}>
+                  <Ionicons name="person" size={18} color="#fff" />
+                </View>
+              ) : (
+                <Ionicons
+                  name="settings-outline"
+                  size={24}
+                  color={theme.colors.textSecondary}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Tab Content */}
+        <View style={{ flex: 1 }}>{renderTabContent()}</View>
+
+        {/* Tab Bar */}
+        <TabBar activeTab={activeTab} onTabChange={handleTabChange} />
+      </View>
     );
+  }
+
+  // ============================================
+  // SETTINGS & INFO SCREENS
+  // ============================================
+
+  if (currentScreen === "settings") {
+    return (
+      <SettingsScreen
+        onNavigate={navigate}
+        onBack={goBack}
+        onOpenSettingsModal={() => navigate("appSettings")}
+      />
+    );
+  }
+
+  if (currentScreen === "appSettings") {
+    return (
+      <AppSettingsScreen
+        autoSaveDataset={autoSaveDataset}
+        serverBaseUrl={serverBaseUrl}
+        confidenceThreshold={confidenceThreshold}
+        hideColorOverlay={hideColorOverlay}
+        onToggleAutoSaveDataset={() => setAutoSaveDataset(!autoSaveDataset)}
+        onSetServerUrl={setServerBaseUrl}
+        onSetConfidenceThreshold={setConfidenceThreshold}
+        onToggleHideColorOverlay={() => setHideColorOverlay(!hideColorOverlay)}
+        onBack={goBack}
+      />
+    );
+  }
+
+  if (currentScreen === "aboutDaing") {
+    return (
+      <AboutDaingScreen
+        onNavigate={navigate}
+        onBack={goBack}
+        selectedSlug={navParams.daingSlug}
+      />
+    );
+  }
+
+  if (currentScreen === "publications") {
+    return <PublicationsScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "contact") {
+    return <ContactScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "aboutUs") {
+    return <AboutUsScreen onNavigate={navigate} onBack={goBack} />;
   }
 
   if (currentScreen === "analytics") {
@@ -595,5 +738,47 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Home header styles
+  homeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.header.paddingHorizontal,
+    paddingVertical: theme.header.paddingVertical,
+    paddingTop: theme.header.paddingTop,
+    backgroundColor: theme.colors.backgroundLight,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  homeHeaderTitle: {
+    fontSize: theme.header.titleSize,
+    fontWeight: theme.header.titleWeight,
+    color: theme.colors.text,
+  },
+  headerRightSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  headerIconButton: {
+    width: theme.header.backButtonSize,
+    height: theme.header.backButtonSize,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSettingsButton: {
+    width: theme.header.backButtonSize,
+    height: theme.header.backButtonSize,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

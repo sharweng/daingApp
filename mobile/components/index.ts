@@ -4,10 +4,17 @@ export { ScanScreen } from "./core/ScanScreen";
 export { AnalyticsScreen } from "./core/AnalyticsScreen";
 export { HistoryScreen } from "./core/HistoryScreen";
 export { AutoDatasetScreen } from "./core/AutoDatasetScreen";
+export { default as ScanTabScreen } from "./core/ScanTabScreen";
 
 // Shared components
 export { SettingsModal } from "./shared/SettingsModal";
 export { ZoomableImage } from "./shared/ZoomableImage";
+export { default as TabBar } from "./shared/TabBar";
+export { default as SettingsScreen } from "./shared/SettingsScreen";
+export { default as AboutDaingScreen } from "./shared/AboutDaingScreen";
+export { default as PublicationsScreen } from "./shared/PublicationsScreen";
+export { default as ContactScreen } from "./shared/ContactScreen";
+export { default as AboutUsScreen } from "./shared/AboutUsScreen";
 
 // Auth screens
 export { LoginScreen } from "./auth/LoginScreen";

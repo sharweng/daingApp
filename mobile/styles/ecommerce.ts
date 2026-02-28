@@ -1,4 +1,5 @@
 import { StyleSheet, Dimensions } from "react-native";
+import { theme } from "./theme";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
@@ -21,19 +22,23 @@ export const ecommerceStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
-    paddingTop: 60,
-    backgroundColor: "#1E293B",
+    paddingHorizontal: theme.header.paddingHorizontal,
+    paddingVertical: theme.header.paddingVertical,
+    paddingTop: theme.header.paddingTop,
+    backgroundColor: theme.colors.backgroundLight,
     borderBottomWidth: 1,
-    borderBottomColor: "#334155",
+    borderBottomColor: theme.colors.border,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#FFFFFF",
+    fontSize: theme.header.titleSize,
+    fontWeight: theme.header.titleWeight,
+    color: theme.colors.text,
   },
   backButton: {
-    padding: 8,
+    width: theme.header.backButtonSize,
+    height: theme.header.backButtonSize,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerRight: {
     flexDirection: "row",

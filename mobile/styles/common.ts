@@ -1,34 +1,5 @@
 import { StyleSheet } from "react-native";
-
-// Design Theme
-const theme = {
-  colors: {
-    primary: '#3B82F6',
-    primaryDark: '#2563EB',
-    primaryLight: '#60A5FA',
-    accent: '#8B5CF6',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    background: '#0F172A',
-    backgroundLight: '#1E293B',
-    backgroundLighter: '#334155',
-    surface: '#1E293B',
-    text: '#FFFFFF',
-    textSecondary: '#94A3B8',
-    textMuted: '#64748B',
-    border: '#334155',
-    borderLight: '#475569',
-    overlay: 'rgba(0, 0, 0, 0.7)',
-  },
-  borderRadius: {
-    sm: 8,
-    md: 12,
-    lg: 16,
-    xl: 24,
-    full: 9999,
-  },
-};
+import { theme } from "./theme";
 
 export { theme };
 
@@ -38,7 +9,7 @@ export const commonStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  
+
   // Screen Header - Modern floating style
   screenHeader: {
     flexDirection: "row",
@@ -49,14 +20,14 @@ export const commonStyles = StyleSheet.create({
     paddingBottom: 16,
     backgroundColor: theme.colors.background,
   },
-  
+
   screenTitle: {
     fontSize: 18,
     fontWeight: "600",
     color: theme.colors.text,
     letterSpacing: 0.3,
   },
-  
+
   // Header icon button
   headerIconButton: {
     width: 40,
@@ -66,7 +37,7 @@ export const commonStyles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  
+
   // Center content wrapper
   centerContent: {
     flex: 1,
@@ -74,18 +45,18 @@ export const commonStyles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 40,
   },
-  
+
   // Camera styles
   cameraWrapper: {
     flex: 1,
     position: "relative",
     backgroundColor: "#000",
   },
-  
+
   camera: {
     flex: 1,
   },
-  
+
   // Camera button container
   buttonContainer: {
     position: "absolute",
@@ -96,7 +67,7 @@ export const commonStyles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  
+
   // Main capture button
   captureButton: {
     width: 80,
@@ -111,7 +82,7 @@ export const commonStyles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  
+
   innerButton: {
     width: 68,
     height: 68,
@@ -120,7 +91,7 @@ export const commonStyles = StyleSheet.create({
     borderWidth: 4,
     borderColor: theme.colors.background,
   },
-  
+
   // Preview container
   previewContainer: {
     flex: 1,
@@ -129,13 +100,13 @@ export const commonStyles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: theme.colors.background,
   },
-  
+
   previewImage: {
     width: "100%",
     flex: 1,
     resizeMode: "contain",
   },
-  
+
   // Bottom button bar
   bottomButtonBar: {
     flexDirection: "row",
@@ -145,7 +116,7 @@ export const commonStyles = StyleSheet.create({
     paddingBottom: 40,
     backgroundColor: theme.colors.background,
   },
-  
+
   bottomButton: {
     flex: 1,
     flexDirection: "row",
@@ -155,13 +126,13 @@ export const commonStyles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     gap: 8,
   },
-  
+
   bottomButtonText: {
     fontSize: 16,
     fontWeight: "600",
     color: theme.colors.text,
   },
-  
+
   // Card styles
   card: {
     backgroundColor: theme.colors.surface,
@@ -170,7 +141,7 @@ export const commonStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  
+
   // Loading overlay
   loadingOverlay: {
     position: "absolute",
@@ -183,13 +154,13 @@ export const commonStyles = StyleSheet.create({
     alignItems: "center",
     zIndex: 1000,
   },
-  
+
   loadingText: {
     color: theme.colors.text,
     marginTop: 16,
     fontSize: 16,
   },
-  
+
   // Refresh button
   refreshButton: {
     flexDirection: "row",
@@ -201,13 +172,13 @@ export const commonStyles = StyleSheet.create({
     marginTop: 24,
     gap: 8,
   },
-  
+
   refreshButtonText: {
     color: theme.colors.text,
     fontSize: 16,
     fontWeight: "600",
   },
-  
+
   // Legacy compatibility
   placeholderText: {
     fontSize: 22,
@@ -215,7 +186,7 @@ export const commonStyles = StyleSheet.create({
     marginTop: 20,
     fontWeight: "600",
   },
-  
+
   placeholderSubtext: {
     fontSize: 14,
     color: theme.colors.textSecondary,
@@ -229,17 +200,17 @@ export const commonStyles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     marginHorizontal: 10,
   },
-  
+
   text: {
     fontSize: 18,
     fontWeight: "bold",
     color: theme.colors.text,
   },
-  
+
   row: {
     flexDirection: "row",
   },
-  
+
   resultHeader: {
     fontSize: 20,
     color: theme.colors.success,
