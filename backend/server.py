@@ -34,6 +34,7 @@ from app.routes import router
 from app.contact import router as contact_router
 from app.payment import router as payment_router
 from app.ecommerce import router as ecommerce_router
+from app.community import router as community_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -68,6 +69,7 @@ app.include_router(router)
 app.include_router(contact_router, tags=["contact"])
 app.include_router(payment_router, tags=["payment"])
 app.include_router(ecommerce_router, tags=["ecommerce"])
+app.include_router(community_router, tags=["community"])
 
 # Dataset directory
 DATASET_DIR = Path("dataset")

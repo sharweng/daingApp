@@ -8,7 +8,7 @@ Merged from daingGraderWeb backend.
 import io
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -197,6 +197,10 @@ async def _get_current_user_from_header(authorization: Optional[str] = Header(No
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     return user
+
+
+# Alias for convenience
+_get_current_user = _get_current_user_from_header
 
 
 async def _require_seller(authorization: Optional[str] = Header(None)):
@@ -2279,4 +2283,1290 @@ async def update_admin_order_status(order_id: str, body: AdminOrderStatusUpdateB
         "new_status": new_status,
         "message": f"Order status updated to {new_status}",
         "order": _normalize_order(orders_collection.find_one({"_id": oid}))
+    }
+
+
+# ============================================
+# PRODUCT REVIEWS
+# ============================================
+
+class ReviewCreateBody(BaseModel):
+    rating: int
+    comment: str = ""
+
+
+class ReviewUpdateBody(BaseModel):
+    rating: Optional[int] = None
+    comment: Optional[str] = None
+
+
+def _normalize_review(doc: dict) -> dict:
+    """Normalize a review document for API response."""
+    if not doc:
+        return None
+    return {
+        "id": str(doc.get("_id")),
+        "product_id": str(doc.get("product_id")) if doc.get("product_id") else "",
+        "seller_id": doc.get("seller_id", ""),
+        "user_id": doc.get("user_id", ""),
+        "user_name": doc.get("user_name", ""),
+        "rating": doc.get("rating", 0),
+        "comment": doc.get("comment", ""),
+        "created_at": doc.get("created_at", ""),
+        "updated_at": doc.get("updated_at", ""),
+    }
+
+
+def _validate_review_comment(comment: str) -> str:
+    """Validate and clean review comment."""
+    if not comment:
+        return ""
+    return comment.strip()[:500]  # Max 500 chars
+
+
+def _user_has_ordered_product(orders_collection, user_id: str, product_id: str) -> bool:
+    """Check if user has ordered the specified product with delivered status."""
+    if orders_collection is None:
+        return False
+    
+    # Check if there's a delivered order containing this product
+    order = orders_collection.find_one({
+        "user_id": user_id,
+        "status": "delivered",
+        "items.product_id": product_id
+    })
+    return order is not None
+
+
+@router.get("/catalog/products/{product_id}/reviews")
+async def get_product_reviews_public(
+    product_id: str,
+    page: int = 1,
+    page_size: int = 5,
+):
+    """Public endpoint for displaying product reviews on the product detail page."""
+    collection = _get_reviews_collection()
+    if collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        oid = ObjectId(product_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    if page < 1 or page_size < 1 or page_size > 50:
+        raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+    
+    # Public query: get all reviews for this product
+    query = {"product_id": oid}
+    total = collection.count_documents(query)
+    docs = list(
+        collection.find(query)
+        .sort("created_at", -1)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+    
+    return {
+        "status": "success",
+        "reviews": [_normalize_review(d) for d in docs],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/seller/products/{product_id}/reviews")
+async def get_seller_product_reviews(
+    product_id: str,
+    page: int = 1,
+    page_size: int = 3,
+    user=Depends(_require_seller),
+):
+    """Seller-only endpoint for viewing reviews of their own products."""
+    collection = _get_reviews_collection()
+    if collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        oid = ObjectId(product_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    if page < 1 or page_size < 1 or page_size > 50:
+        raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+    
+    query = {"product_id": oid, "seller_id": str(user.get("_id"))}
+    total = collection.count_documents(query)
+    docs = list(
+        collection.find(query)
+        .sort("created_at", -1)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+    
+    return {
+        "status": "success",
+        "reviews": [_normalize_review(d) for d in docs],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/products/{product_id}/reviews")
+async def create_product_review(product_id: str, body: ReviewCreateBody, user=Depends(_get_current_user)):
+    """Create a product review. Only customers who ordered the product can review."""
+    collection = _get_reviews_collection()
+    products = _get_products_collection()
+    orders = _get_orders_collection()
+    
+    if collection is None or products is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    role = (user.get("role") or "user").strip().lower()
+    if role != "user":
+        raise HTTPException(status_code=403, detail="Only customers can review products")
+    
+    try:
+        oid = ObjectId(product_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    product = products.find_one({"_id": oid})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    user_id = str(user.get("_id"))
+    
+    if not _user_has_ordered_product(orders, user_id, product_id):
+        raise HTTPException(status_code=403, detail="You can only review products you've ordered")
+    
+    existing = collection.find_one({"product_id": oid, "user_id": user_id})
+    if existing:
+        raise HTTPException(status_code=409, detail="You already reviewed this product. Update your review instead")
+    
+    rating = int(body.rating)
+    if rating < 1 or rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be 1-5")
+    
+    comment = _validate_review_comment(body.comment)
+    now = datetime.utcnow().isoformat()
+    
+    doc = {
+        "product_id": oid,
+        "seller_id": product.get("seller_id", ""),
+        "user_id": user_id,
+        "user_name": user.get("name", ""),
+        "rating": rating,
+        "comment": comment,
+        "created_at": now,
+        "updated_at": now,
+    }
+    
+    result = collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    
+    return {"status": "success", "review": _normalize_review(doc)}
+
+
+@router.get("/products/{product_id}/reviews/me")
+async def get_my_product_review(product_id: str, user=Depends(_get_current_user)):
+    """Get current user's review for a product and whether they can review."""
+    collection = _get_reviews_collection()
+    products = _get_products_collection()
+    orders = _get_orders_collection()
+    
+    if collection is None or products is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        oid = ObjectId(product_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    product = products.find_one({"_id": oid})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    user_id = str(user.get("_id"))
+    can_review = _user_has_ordered_product(orders, user_id, product_id)
+    existing = collection.find_one({"product_id": oid, "user_id": user_id})
+    
+    return {
+        "status": "success",
+        "can_review": bool(can_review),
+        "review": _normalize_review(existing) if existing else None,
+    }
+
+
+@router.patch("/products/{product_id}/reviews/me")
+async def update_my_product_review(product_id: str, body: ReviewUpdateBody, user=Depends(_get_current_user)):
+    """Update current user's review for a product."""
+    collection = _get_reviews_collection()
+    products = _get_products_collection()
+    orders = _get_orders_collection()
+    
+    if collection is None or products is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    role = (user.get("role") or "user").strip().lower()
+    if role != "user":
+        raise HTTPException(status_code=403, detail="Only customers can review products")
+    
+    try:
+        oid = ObjectId(product_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    product = products.find_one({"_id": oid})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    user_id = str(user.get("_id"))
+    
+    if not _user_has_ordered_product(orders, user_id, product_id):
+        raise HTTPException(status_code=403, detail="You can only review products you've ordered")
+    
+    existing = collection.find_one({"product_id": oid, "user_id": user_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    updates: Dict[str, Any] = {"updated_at": datetime.utcnow().isoformat()}
+    
+    if body.rating is not None:
+        rating = int(body.rating)
+        if rating < 1 or rating > 5:
+            raise HTTPException(status_code=400, detail="Rating must be 1-5")
+        updates["rating"] = rating
+    
+    if body.comment is not None:
+        updates["comment"] = _validate_review_comment(body.comment)
+    
+    if len(updates) == 1:
+        raise HTTPException(status_code=400, detail="No updates provided")
+    
+    collection.update_one({"_id": existing.get("_id")}, {"$set": updates})
+    updated = collection.find_one({"_id": existing.get("_id")})
+    
+    return {"status": "success", "review": _normalize_review(updated)}
+
+
+@router.delete("/products/{product_id}/reviews/me")
+async def delete_my_product_review(product_id: str, user=Depends(_get_current_user)):
+    """Delete user's own review for a product."""
+    collection = _get_reviews_collection()
+    products = _get_products_collection()
+    
+    if collection is None or products is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    role = (user.get("role") or "user").strip().lower()
+    if role != "user":
+        raise HTTPException(status_code=403, detail="Only customers can delete reviews")
+    
+    try:
+        oid = ObjectId(product_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    product = products.find_one({"_id": oid})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    user_id = str(user.get("_id"))
+    existing = collection.find_one({"product_id": oid, "user_id": user_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    collection.delete_one({"_id": existing.get("_id")})
+    
+    return {"status": "success", "message": "Review deleted successfully"}
+
+
+# ============================================
+# VOUCHERS
+# ============================================
+
+def _get_vouchers_collection():
+    """Return vouchers collection from MongoDB."""
+    try:
+        return get_db()["vouchers"]
+    except Exception:
+        return None
+
+
+class VoucherCreateBody(BaseModel):
+    code: str
+    discount_type: str  # "fixed" or "percentage"
+    value: float
+    expiration_date: Optional[str] = None
+    max_uses: Optional[int] = None
+    per_user_limit: Optional[int] = None
+    min_order_amount: Optional[float] = None
+
+
+class VoucherUpdateBody(BaseModel):
+    code: Optional[str] = None
+    discount_type: Optional[str] = None
+    value: Optional[float] = None
+    expiration_date: Optional[str] = None
+    max_uses: Optional[int] = None
+    per_user_limit: Optional[int] = None
+    min_order_amount: Optional[float] = None
+    active: Optional[bool] = None
+
+
+@router.get("/api/vouchers")
+async def list_vouchers(
+    filter_by: str = "all",
+    seller_id: Optional[str] = None,
+    user=Depends(_get_current_user)
+):
+    """List vouchers. If seller_id is provided, filter to that seller. Otherwise, list all (admin only)."""
+    vouchers_collection = _get_vouchers_collection()
+    if vouchers_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    user_id = str(user.get("_id"))
+    user_role = user.get("role", "user")
+    
+    if seller_id:
+        query = {"seller_id": seller_id}
+    else:
+        if user_role != "admin":
+            query = {"seller_id": user_id}
+        else:
+            query = {}
+    
+    # Apply status filter
+    now = datetime.utcnow()
+    if filter_by == "active":
+        query["$or"] = [
+            {"expiration_date": {"$exists": False}},
+            {"expiration_date": {"$gt": now}},
+            {"expiration_date": None}
+        ]
+        query["active"] = True
+    elif filter_by == "expired":
+        query["expiration_date"] = {"$lt": now}
+    
+    try:
+        vouchers = list(vouchers_collection.find(query).sort("created_at", -1))
+        # Convert ObjectId to string
+        for v in vouchers:
+            v["_id"] = str(v["_id"])
+            v["seller_id"] = str(v["seller_id"]) if v.get("seller_id") else ""
+            if v.get("created_at"):
+                if hasattr(v["created_at"], "isoformat"):
+                    v["created_at"] = v["created_at"].isoformat()
+            if v.get("expiration_date"):
+                if hasattr(v["expiration_date"], "isoformat"):
+                    v["expiration_date"] = v["expiration_date"].isoformat()
+        
+        return {"status": "success", "vouchers": vouchers}
+    except Exception as e:
+        print(f"Error listing vouchers: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/api/vouchers/{voucher_id}")
+async def get_voucher(voucher_id: str, user=Depends(_get_current_user)):
+    """Get a single voucher details."""
+    vouchers_collection = _get_vouchers_collection()
+    if vouchers_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        voucher = vouchers_collection.find_one({"_id": ObjectId(voucher_id)})
+        if not voucher:
+            raise HTTPException(status_code=404, detail="Voucher not found")
+        
+        voucher["_id"] = str(voucher["_id"])
+        voucher["seller_id"] = str(voucher["seller_id"]) if voucher.get("seller_id") else ""
+        if voucher.get("created_at") and hasattr(voucher["created_at"], "isoformat"):
+            voucher["created_at"] = voucher["created_at"].isoformat()
+        if voucher.get("expiration_date") and hasattr(voucher["expiration_date"], "isoformat"):
+            voucher["expiration_date"] = voucher["expiration_date"].isoformat()
+        
+        return {"status": "success", "voucher": voucher}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting voucher: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.post("/api/vouchers")
+async def create_voucher(body: VoucherCreateBody, user=Depends(_get_current_user)):
+    """Create a new voucher code."""
+    vouchers_collection = _get_vouchers_collection()
+    if vouchers_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    user_id = str(user.get("_id"))
+    
+    # Validation
+    if len(body.code) < 3 or len(body.code) > 20:
+        raise HTTPException(status_code=400, detail="Code must be 3-20 characters")
+    
+    if not re.match(r"^[A-Za-z0-9_-]+$", body.code):
+        raise HTTPException(status_code=400, detail="Code must be alphanumeric, dash, or underscore only")
+    
+    if body.discount_type not in ["fixed", "percentage"]:
+        raise HTTPException(status_code=400, detail="Invalid discount type")
+    
+    if body.value <= 0:
+        raise HTTPException(status_code=400, detail="Value must be greater than 0")
+    
+    if body.discount_type == "percentage" and body.value > 100:
+        raise HTTPException(status_code=400, detail="Percentage cannot exceed 100%")
+    
+    # Check if code already exists
+    if vouchers_collection.find_one({"code": body.code.upper()}):
+        raise HTTPException(status_code=400, detail="This code already exists")
+    
+    # Parse dates
+    expiration_date = None
+    if body.expiration_date:
+        try:
+            expiration_date = datetime.fromisoformat(body.expiration_date.replace("Z", "+00:00"))
+            if expiration_date <= datetime.utcnow():
+                raise HTTPException(status_code=400, detail="Expiration date must be in the future")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
+    
+    # Validate constraints
+    if body.max_uses is not None and body.max_uses <= 0:
+        raise HTTPException(status_code=400, detail="Max uses must be greater than 0")
+    
+    if body.per_user_limit is not None and body.per_user_limit <= 0:
+        raise HTTPException(status_code=400, detail="Per user limit must be greater than 0")
+    
+    if body.min_order_amount is not None and body.min_order_amount <= 0:
+        raise HTTPException(status_code=400, detail="Min order amount must be greater than 0")
+    
+    try:
+        voucher_doc = {
+            "seller_id": ObjectId(user_id),
+            "code": body.code.upper(),
+            "discount_type": body.discount_type,
+            "value": body.value,
+            "expiration_date": expiration_date,
+            "max_uses": body.max_uses,
+            "current_uses": 0,
+            "per_user_limit": body.per_user_limit,
+            "min_order_amount": body.min_order_amount,
+            "active": True,
+            "created_at": datetime.utcnow(),
+            "used_by": []
+        }
+        
+        result = vouchers_collection.insert_one(voucher_doc)
+        voucher_doc["_id"] = str(result.inserted_id)
+        voucher_doc["seller_id"] = str(voucher_doc["seller_id"])
+        voucher_doc["created_at"] = voucher_doc["created_at"].isoformat()
+        if voucher_doc.get("expiration_date"):
+            voucher_doc["expiration_date"] = voucher_doc["expiration_date"].isoformat()
+        
+        return {"status": "success", "voucher": voucher_doc}
+    except Exception as e:
+        print(f"Error creating voucher: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.put("/api/vouchers/{voucher_id}")
+async def update_voucher(voucher_id: str, body: VoucherUpdateBody, user=Depends(_get_current_user)):
+    """Update a voucher (only own vouchers can be edited)."""
+    vouchers_collection = _get_vouchers_collection()
+    if vouchers_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    user_id = str(user.get("_id"))
+    
+    try:
+        voucher = vouchers_collection.find_one({"_id": ObjectId(voucher_id)})
+        if not voucher:
+            raise HTTPException(status_code=404, detail="Voucher not found")
+        
+        # Only seller who created it can edit
+        if str(voucher["seller_id"]) != user_id:
+            raise HTTPException(status_code=403, detail="You can only edit your own voucher codes")
+        
+        update_data = {}
+        
+        if body.code is not None:
+            if len(body.code) < 3 or len(body.code) > 20:
+                raise HTTPException(status_code=400, detail="Code must be 3-20 characters")
+            if not re.match(r"^[A-Za-z0-9_-]+$", body.code):
+                raise HTTPException(status_code=400, detail="Code must be alphanumeric, dash, or underscore only")
+            if vouchers_collection.find_one({"code": body.code.upper(), "_id": {"$ne": ObjectId(voucher_id)}}):
+                raise HTTPException(status_code=400, detail="This code already exists")
+            update_data["code"] = body.code.upper()
+        
+        if body.discount_type is not None:
+            if body.discount_type not in ["fixed", "percentage"]:
+                raise HTTPException(status_code=400, detail="Invalid discount type")
+            update_data["discount_type"] = body.discount_type
+        
+        if body.value is not None:
+            if body.value <= 0:
+                raise HTTPException(status_code=400, detail="Value must be greater than 0")
+            current_type = body.discount_type or voucher.get("discount_type")
+            if current_type == "percentage" and body.value > 100:
+                raise HTTPException(status_code=400, detail="Percentage cannot exceed 100%")
+            update_data["value"] = body.value
+        
+        if body.expiration_date is not None:
+            try:
+                exp_date = datetime.fromisoformat(body.expiration_date.replace("Z", "+00:00"))
+                if exp_date <= datetime.utcnow():
+                    raise HTTPException(status_code=400, detail="Expiration date must be in the future")
+                update_data["expiration_date"] = exp_date
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format")
+        
+        if body.max_uses is not None:
+            if body.max_uses <= 0:
+                raise HTTPException(status_code=400, detail="Max uses must be greater than 0")
+            update_data["max_uses"] = body.max_uses
+        
+        if body.per_user_limit is not None:
+            if body.per_user_limit <= 0:
+                raise HTTPException(status_code=400, detail="Per user limit must be greater than 0")
+            update_data["per_user_limit"] = body.per_user_limit
+        
+        if body.min_order_amount is not None:
+            if body.min_order_amount <= 0:
+                raise HTTPException(status_code=400, detail="Min order amount must be greater than 0")
+            update_data["min_order_amount"] = body.min_order_amount
+        
+        if body.active is not None:
+            update_data["active"] = body.active
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        vouchers_collection.update_one({"_id": ObjectId(voucher_id)}, {"$set": update_data})
+        updated_voucher = vouchers_collection.find_one({"_id": ObjectId(voucher_id)})
+        
+        updated_voucher["_id"] = str(updated_voucher["_id"])
+        updated_voucher["seller_id"] = str(updated_voucher["seller_id"])
+        if updated_voucher.get("created_at") and hasattr(updated_voucher["created_at"], "isoformat"):
+            updated_voucher["created_at"] = updated_voucher["created_at"].isoformat()
+        if updated_voucher.get("expiration_date") and hasattr(updated_voucher["expiration_date"], "isoformat"):
+            updated_voucher["expiration_date"] = updated_voucher["expiration_date"].isoformat()
+        
+        return {"status": "success", "voucher": updated_voucher}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating voucher: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.delete("/api/vouchers/{voucher_id}")
+async def delete_voucher(voucher_id: str, user=Depends(_get_current_user)):
+    """Delete a voucher (only own vouchers can be deleted)."""
+    vouchers_collection = _get_vouchers_collection()
+    if vouchers_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    user_id = str(user.get("_id"))
+    
+    try:
+        voucher = vouchers_collection.find_one({"_id": ObjectId(voucher_id)})
+        if not voucher:
+            raise HTTPException(status_code=404, detail="Voucher not found")
+        
+        if str(voucher["seller_id"]) != user_id:
+            raise HTTPException(status_code=403, detail="You can only delete your own voucher codes")
+        
+        vouchers_collection.delete_one({"_id": ObjectId(voucher_id)})
+        return {"status": "success", "message": "Voucher deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting voucher: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.post("/api/vouchers/validate")
+async def validate_voucher(code: str, order_total: float, user=Depends(_get_current_user)):
+    """Validate a voucher code and return discount info."""
+    vouchers_collection = _get_vouchers_collection()
+    if vouchers_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    user_id = str(user.get("_id"))
+    
+    try:
+        voucher = vouchers_collection.find_one({"code": code.upper(), "active": True})
+        if not voucher:
+            raise HTTPException(status_code=400, detail="Invalid or inactive voucher code")
+        
+        # Check expiration
+        if voucher.get("expiration_date") and voucher["expiration_date"] <= datetime.utcnow():
+            raise HTTPException(status_code=400, detail="This voucher code has expired")
+        
+        # Check max uses
+        if voucher.get("max_uses") and voucher.get("current_uses", 0) >= voucher["max_uses"]:
+            raise HTTPException(status_code=400, detail="This voucher code has reached its usage limit")
+        
+        # Check per user limit
+        if voucher.get("per_user_limit"):
+            user_usage = next(
+                (u["used_count"] for u in voucher.get("used_by", []) if u["user_id"] == user_id),
+                0
+            )
+            if user_usage >= voucher["per_user_limit"]:
+                raise HTTPException(status_code=400, detail="You have reached the usage limit for this code")
+        
+        # Check minimum order amount
+        if voucher.get("min_order_amount") and order_total < voucher["min_order_amount"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Minimum order amount of ₱{voucher['min_order_amount']} required"
+            )
+        
+        # Calculate discount
+        if voucher["discount_type"] == "percentage":
+            discount_value = order_total * (voucher["value"] / 100)
+        else:
+            discount_value = voucher["value"]
+        
+        return {
+            "status": "success",
+            "valid": True,
+            "discount_value": discount_value,
+            "discount_type": voucher["discount_type"],
+            "voucher_id": str(voucher["_id"])
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error validating voucher: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+# ============================================
+# PAYOUTS
+# ============================================
+
+def _get_payouts_collection():
+    """Return payouts collection from MongoDB."""
+    try:
+        return get_db()["payouts"]
+    except Exception:
+        return None
+
+
+class PayoutStatusUpdateBody(BaseModel):
+    status: str  # pending, completed
+    notes: Optional[str] = None
+
+
+@router.get("/payouts/admin")
+async def get_admin_payouts(
+    page: int = 1,
+    page_size: int = 20,
+    status: str = "all",
+    seller_id: str = "all",
+    period: str = "",
+    user=Depends(_require_admin)
+):
+    """Get all payouts for admin management with filters."""
+    payouts_collection = _get_payouts_collection()
+    users_collection = _get_users_collection()
+
+    if payouts_collection is None:
+        return {"status": "success", "page": page, "page_size": page_size, "total": 0, "payouts": []}
+
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 50)
+
+    # Build query
+    query = {}
+    if status != "all":
+        query["status"] = status
+    if seller_id != "all":
+        query["seller_id"] = seller_id
+    if period:
+        query["period"] = period
+
+    total = payouts_collection.count_documents(query)
+    docs = list(
+        payouts_collection.find(query)
+        .sort("created_at", -1)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    payouts = []
+    for doc in docs:
+        sid = doc.get("seller_id", "")
+        seller_name = "Unknown"
+
+        # Get seller name
+        if sid and users_collection:
+            try:
+                seller_user = users_collection.find_one({"_id": ObjectId(sid)})
+                if seller_user:
+                    seller_name = seller_user.get("name", "Unknown")
+            except:
+                pass
+
+        payouts.append({
+            "id": str(doc.get("_id")),
+            "seller_id": sid,
+            "seller_name": seller_name,
+            "period": doc.get("period", ""),
+            "total_sales": float(doc.get("total_sales", 0)),
+            "commission_percent": doc.get("commission_percent", 5),
+            "commission_amount": float(doc.get("commission_amount", 0)),
+            "amount_to_pay": float(doc.get("amount_to_pay", 0)),
+            "status": doc.get("status", "pending"),
+            "notes": doc.get("notes", ""),
+            "created_at": doc.get("created_at", ""),
+            "paid_at": doc.get("paid_at"),
+        })
+
+    return {
+        "status": "success",
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "payouts": payouts,
+    }
+
+
+@router.get("/payouts/admin/stats")
+async def get_admin_payouts_stats(user=Depends(_require_admin)):
+    """Get payout statistics for admin dashboard."""
+    payouts_collection = _get_payouts_collection()
+
+    if payouts_collection is None:
+        return {
+            "status": "success",
+            "stats": {
+                "total_payouts": 0,
+                "pending_payouts": 0,
+                "completed_payouts": 0,
+                "total_pending_amount": 0,
+                "total_paid_amount": 0,
+            }
+        }
+
+    total_payouts = payouts_collection.count_documents({})
+    pending_payouts = payouts_collection.count_documents({"status": "pending"})
+    completed_payouts = payouts_collection.count_documents({"status": "completed"})
+
+    # Calculate amounts
+    pending_docs = list(payouts_collection.find({"status": "pending"}))
+    total_pending = sum(float(doc.get("amount_to_pay", 0)) for doc in pending_docs)
+
+    completed_docs = list(payouts_collection.find({"status": "completed"}))
+    total_paid = sum(float(doc.get("amount_to_pay", 0)) for doc in completed_docs)
+
+    return {
+        "status": "success",
+        "stats": {
+            "total_payouts": total_payouts,
+            "pending_payouts": pending_payouts,
+            "completed_payouts": completed_payouts,
+            "total_pending_amount": round(total_pending, 2),
+            "total_paid_amount": round(total_paid, 2),
+        }
+    }
+
+
+@router.put("/payouts/admin/{payout_id}/status")
+async def update_payout_status(payout_id: str, body: PayoutStatusUpdateBody, user=Depends(_require_admin)):
+    """Update payout status (admin only)."""
+    payouts_collection = _get_payouts_collection()
+
+    if payouts_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    try:
+        oid = ObjectId(payout_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid payout ID")
+
+    payout = payouts_collection.find_one({"_id": oid})
+    if not payout:
+        raise HTTPException(status_code=404, detail="Payout not found")
+
+    new_status = body.status.lower()
+    if new_status not in ["pending", "completed"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    now = datetime.utcnow().isoformat()
+    update_data = {
+        "status": new_status,
+        "updated_at": now,
+    }
+
+    if body.notes:
+        update_data["notes"] = body.notes
+
+    if new_status == "completed":
+        update_data["paid_at"] = now
+
+    payouts_collection.update_one({"_id": oid}, {"$set": update_data})
+
+    return {
+        "status": "success",
+        "new_status": new_status,
+        "message": f"Payout status updated to {new_status}",
+    }
+
+
+@router.get("/payouts/mysales")
+async def get_seller_earnings(user=Depends(_require_seller)):
+    """Get current seller's earnings summary and payout history."""
+    payouts_collection = _get_payouts_collection()
+    orders_collection = _get_orders_collection()
+    products_collection = _get_products_collection()
+
+    if payouts_collection is None or orders_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    seller_id = str(user.get("_id"))
+    seller_name = user.get("name", "Seller")
+
+    # Get seller's payouts
+    payouts = list(payouts_collection.find({"seller_id": seller_id}).sort("created_at", -1))
+
+    # Calculate current period earnings (current month)
+    now = datetime.now()
+    current_period = f"{now.year}-{now.month:02d}"
+
+    current_month_payout = next(
+        (p for p in payouts if p.get("period") == current_period),
+        None
+    )
+
+    # If no payout for current month, calculate from orders
+    current_total_sales = 0
+    current_orders_count = 0
+
+    if not current_month_payout:
+        # Sum orders for current seller this month by matching product IDs
+        if products_collection is not None:
+            seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1}))
+            seller_product_ids = {str(p.get("_id")) for p in seller_products}
+            all_orders = list(orders_collection.find({}))
+            for order in all_orders:
+                items = order.get("items", [])
+                seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+                if seller_items:
+                    order_date = order.get("created_at", "")
+                    if isinstance(order_date, str) and order_date.startswith(current_period):
+                        current_total_sales += sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in seller_items)
+                        current_orders_count += 1
+    else:
+        current_total_sales = float(current_month_payout.get("total_sales", 0))
+        current_orders_count = len(current_month_payout.get("orders", []))
+
+    # Commission calculation (default 5%)
+    commission_percent = 5
+    commission_amount = (current_total_sales * commission_percent) / 100
+    amount_to_pay = current_total_sales - commission_amount
+
+    # Build payout history
+    payout_history = []
+    for payout in payouts:
+        payout_history.append({
+            "id": str(payout.get("_id", "")),
+            "period": payout.get("period", ""),
+            "total_sales": float(payout.get("total_sales", 0)),
+            "commission_percent": payout.get("commission_percent", 5),
+            "commission_amount": float(payout.get("commission_amount", 0)),
+            "amount_to_pay": float(payout.get("amount_to_pay", 0)),
+            "status": payout.get("status", "pending"),
+            "created_at": payout.get("created_at", ""),
+            "paid_at": payout.get("paid_at"),
+        })
+
+    return {
+        "status": "success",
+        "seller_name": seller_name,
+        "current_period": {
+            "period": current_period,
+            "total_sales": round(current_total_sales, 2),
+            "orders_count": current_orders_count,
+            "commission_percent": commission_percent,
+            "commission_amount": round(commission_amount, 2),
+            "amount_to_pay": round(amount_to_pay, 2),
+        },
+        "payout_history": payout_history,
+    }
+
+
+# ============================================
+# ADMIN USER MANAGEMENT
+# ============================================
+
+class ToggleUserStatusBody(BaseModel):
+    reason: str = ""
+
+
+@router.get("/admin/users")
+async def get_admin_users(
+    page: int = 1,
+    page_size: int = 20,
+    role: str = "all",
+    status: str = "all",
+    search: str = "",
+    user=Depends(_require_admin)
+):
+    """Get all users for admin management with filters."""
+    db = get_db()
+    users_collection = db["users"]
+
+    query = {}
+    if role != "all" and role in ["admin", "seller", "user"]:
+        query["role"] = role
+    if status != "all" and status in ["active", "inactive"]:
+        query["status"] = status
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+        ]
+
+    total = users_collection.count_documents(query)
+    skip = (max(page, 1) - 1) * page_size
+    cursor = users_collection.find(query).skip(skip).limit(page_size).sort("created_at", -1)
+
+    users_list = []
+    for doc in cursor:
+        user_id = str(doc["_id"])
+        user_role = doc.get("role", "user")
+
+        users_list.append({
+            "id": user_id,
+            "name": doc.get("name", ""),
+            "email": doc.get("email", ""),
+            "role": user_role,
+            "status": doc.get("status", "active"),
+            "avatar": doc.get("avatar", ""),
+            "joined_at": doc.get("created_at", ""),
+            "deactivation_reason": doc.get("deactivation_reason", ""),
+        })
+
+    return {
+        "status": "success",
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "users": users_list,
+    }
+
+
+@router.get("/admin/users/stats")
+async def get_admin_users_stats(user=Depends(_require_admin)):
+    """Get user statistics for admin dashboard."""
+    db = get_db()
+    users_collection = db["users"]
+
+    total = users_collection.count_documents({})
+    admins = users_collection.count_documents({"role": "admin"})
+    sellers = users_collection.count_documents({"role": "seller"})
+    users_count = users_collection.count_documents({"role": "user"})
+    active = users_collection.count_documents({"status": {"$ne": "inactive"}})
+    inactive = users_collection.count_documents({"status": "inactive"})
+
+    return {
+        "status": "success",
+        "stats": {
+            "total": total,
+            "admins": admins,
+            "sellers": sellers,
+            "users": users_count,
+            "active": active,
+            "inactive": inactive,
+        }
+    }
+
+
+@router.put("/admin/users/{user_id}/toggle-status")
+async def toggle_user_status(user_id: str, body: ToggleUserStatusBody, user=Depends(_require_admin)):
+    """Toggle user active/inactive status."""
+    db = get_db()
+    users_collection = db["users"]
+
+    try:
+        oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    target_user = users_collection.find_one({"_id": oid})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    current_status = target_user.get("status", "active")
+    new_status = "inactive" if current_status == "active" else "active"
+
+    update_data = {"status": new_status}
+    if new_status == "inactive":
+        update_data["deactivation_reason"] = body.reason or "No reason provided"
+        update_data["deactivated_at"] = datetime.utcnow().isoformat()
+    else:
+        update_data["deactivation_reason"] = ""
+        update_data["reactivated_at"] = datetime.utcnow().isoformat()
+
+    users_collection.update_one({"_id": oid}, {"$set": update_data})
+
+    return {
+        "status": "success",
+        "new_status": new_status,
+        "user_id": user_id,
+        "message": f"User {'deactivated' if new_status == 'inactive' else 'activated'} successfully",
+    }
+
+
+@router.get("/admin/users/{user_id}")
+async def get_admin_user_detail(user_id: str, user=Depends(_require_admin)):
+    """Get detailed user information for admin view."""
+    db = get_db()
+    users_collection = db["users"]
+
+    try:
+        oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    target_user = users_collection.find_one({"_id": oid})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_role = target_user.get("role", "user")
+
+    return {
+        "status": "success",
+        "user": {
+            "id": str(target_user["_id"]),
+            "name": target_user.get("name", ""),
+            "email": target_user.get("email", ""),
+            "role": user_role,
+            "status": target_user.get("status", "active"),
+            "avatar": target_user.get("avatar", ""),
+            "joined_at": target_user.get("created_at", ""),
+            "deactivation_reason": target_user.get("deactivation_reason", ""),
+            "deactivated_at": target_user.get("deactivated_at", ""),
+            "reactivated_at": target_user.get("reactivated_at", ""),
+        }
+    }
+
+
+# ============================================
+# ADMIN USER ANALYTICS
+# ============================================
+
+@router.get("/admin/analytics/users/kpis")
+async def get_admin_user_analytics_kpis(user=Depends(_require_admin)):
+    """Get user KPI summary with percentage changes vs last 30 days."""
+    db = get_db()
+    users_collection = db["users"]
+
+    now = datetime.utcnow()
+    thirty_days_ago = (now - timedelta(days=30)).isoformat()
+    sixty_days_ago = (now - timedelta(days=60)).isoformat()
+
+    # Current totals
+    total_users = users_collection.count_documents({})
+    active_users = users_collection.count_documents({"status": {"$ne": "inactive"}})
+    verified_sellers = users_collection.count_documents({"role": "seller", "status": {"$ne": "inactive"}})
+    disabled_users = users_collection.count_documents({"status": "inactive"})
+
+    # Signups in last 30 days vs previous 30 days for % change
+    new_last_30 = users_collection.count_documents({"created_at": {"$gte": thirty_days_ago}})
+    new_prev_30 = users_collection.count_documents({
+        "created_at": {"$gte": sixty_days_ago, "$lt": thirty_days_ago}
+    })
+
+    # Sellers created in last/prev 30 days
+    seller_last_30 = users_collection.count_documents({
+        "role": "seller", "created_at": {"$gte": thirty_days_ago}
+    })
+    seller_prev_30 = users_collection.count_documents({
+        "role": "seller", "created_at": {"$gte": sixty_days_ago, "$lt": thirty_days_ago}
+    })
+
+    # Disabled in last/prev 30 days
+    disabled_last_30 = users_collection.count_documents({
+        "status": "inactive", "deactivated_at": {"$gte": thirty_days_ago}
+    })
+    disabled_prev_30 = users_collection.count_documents({
+        "status": "inactive", "deactivated_at": {"$gte": sixty_days_ago, "$lt": thirty_days_ago}
+    })
+
+    def pct_change(current, previous):
+        if previous == 0:
+            return 100.0 if current > 0 else 0.0
+        return round(((current - previous) / previous) * 100, 1)
+
+    return {
+        "status": "success",
+        "kpis": {
+            "total_users": total_users,
+            "active_users": active_users,
+            "verified_sellers": verified_sellers,
+            "disabled_users": disabled_users,
+            "total_change": pct_change(new_last_30, new_prev_30),
+            "active_change": pct_change(new_last_30, new_prev_30),
+            "sellers_change": pct_change(seller_last_30, seller_prev_30),
+            "disabled_change": pct_change(disabled_last_30, disabled_prev_30),
+        }
+    }
+
+
+@router.get("/admin/analytics/users/segmentation")
+async def get_admin_user_analytics_segmentation(user=Depends(_require_admin)):
+    """Get user segmentation data for donut and progress bars."""
+    db = get_db()
+    users_collection = db["users"]
+
+    total = users_collection.count_documents({})
+    roles = {
+        "Regular Users": users_collection.count_documents({"role": "user"}),
+        "Sellers": users_collection.count_documents({"role": "seller"}),
+        "Admins": users_collection.count_documents({"role": "admin"}),
+    }
+    statuses = {
+        "Active": users_collection.count_documents({"status": {"$ne": "inactive"}}),
+        "Inactive": users_collection.count_documents({"status": "inactive"}),
+    }
+
+    return {
+        "status": "success",
+        "total": total,
+        "roles": roles,
+        "statuses": statuses,
+    }
+
+
+# ============================================
+# ADMIN MARKET ANALYTICS
+# ============================================
+
+@router.get("/admin/analytics/market/kpis")
+async def get_admin_market_kpis(user=Depends(_require_admin)):
+    """Get market KPI summary: revenue, orders, products, sellers, stocks, avg order."""
+    db = get_db()
+    orders_col = _get_orders_collection()
+    products_col = _get_products_collection()
+    users_col = db["users"]
+
+    now = datetime.utcnow()
+    thirty_days_ago = (now - timedelta(days=30)).isoformat()
+    sixty_days_ago = (now - timedelta(days=60)).isoformat()
+
+    # Totals
+    total_orders = orders_col.count_documents({}) if orders_col is not None else 0
+    delivered_orders = orders_col.count_documents({"status": "delivered"}) if orders_col is not None else 0
+    pending_orders = orders_col.count_documents({"status": "pending"}) if orders_col is not None else 0
+    cancelled_orders = orders_col.count_documents({"status": "cancelled"}) if orders_col is not None else 0
+
+    # Revenue (delivered only)
+    revenue_docs = list(orders_col.find({"status": "delivered"}, {"total": 1})) if orders_col is not None else []
+    total_revenue = sum(float(d.get("total", 0)) for d in revenue_docs)
+
+    # Total sales (all orders)
+    all_order_docs = list(orders_col.find({}, {"total": 1})) if orders_col is not None else []
+    total_sales = sum(float(d.get("total", 0)) for d in all_order_docs)
+    avg_order_value = total_sales / total_orders if total_orders > 0 else 0
+
+    # Products & stock
+    total_products = products_col.count_documents({}) if products_col is not None else 0
+    active_products = products_col.count_documents({"is_disabled": {"$ne": True}}) if products_col is not None else 0
+    all_products = list(products_col.find({}, {"stock_qty": 1})) if products_col is not None else []
+    total_stock = sum(int(p.get("stock_qty", 0)) for p in all_products)
+    out_of_stock = products_col.count_documents({"stock_qty": {"$lte": 0}, "is_disabled": {"$ne": True}}) if products_col is not None else 0
+
+    # Sellers
+    total_sellers = users_col.count_documents({"role": "seller"})
+    active_sellers = users_col.count_documents({"role": "seller", "status": {"$ne": "inactive"}})
+
+    # % changes (orders last 30 vs prev 30)
+    orders_last_30 = orders_col.count_documents({"created_at": {"$gte": thirty_days_ago}}) if orders_col is not None else 0
+    orders_prev_30 = orders_col.count_documents({"created_at": {"$gte": sixty_days_ago, "$lt": thirty_days_ago}}) if orders_col is not None else 0
+
+    rev_last_30_docs = list(orders_col.find({"status": "delivered", "created_at": {"$gte": thirty_days_ago}}, {"total": 1})) if orders_col is not None else []
+    rev_prev_30_docs = list(orders_col.find({"status": "delivered", "created_at": {"$gte": sixty_days_ago, "$lt": thirty_days_ago}}, {"total": 1})) if orders_col is not None else []
+    rev_last_30 = sum(float(d.get("total", 0)) for d in rev_last_30_docs)
+    rev_prev_30 = sum(float(d.get("total", 0)) for d in rev_prev_30_docs)
+
+    def pct(c, p):
+        if p == 0:
+            return 100.0 if c > 0 else 0.0
+        return round(((c - p) / p) * 100, 1)
+
+    return {
+        "status": "success",
+        "kpis": {
+            "total_revenue": round(total_revenue, 2),
+            "total_sales": round(total_sales, 2),
+            "total_orders": total_orders,
+            "delivered_orders": delivered_orders,
+            "pending_orders": pending_orders,
+            "cancelled_orders": cancelled_orders,
+            "avg_order_value": round(avg_order_value, 2),
+            "total_products": total_products,
+            "active_products": active_products,
+            "total_stock": total_stock,
+            "out_of_stock": out_of_stock,
+            "total_sellers": total_sellers,
+            "active_sellers": active_sellers,
+            "revenue_change": pct(rev_last_30, rev_prev_30),
+            "orders_change": pct(orders_last_30, orders_prev_30),
+        }
+    }
+
+
+@router.get("/admin/analytics/market/segmentation")
+async def get_admin_market_segmentation(user=Depends(_require_admin)):
+    """Get market segmentation: orders by status, products by category, top sellers."""
+    orders_col = _get_orders_collection()
+    products_col = _get_products_collection()
+
+    # Orders by status
+    order_statuses = {}
+    total_orders = 0
+    if orders_col is not None:
+        for s in ["pending", "confirmed", "shipped", "delivered", "cancelled"]:
+            c = orders_col.count_documents({"status": s})
+            order_statuses[s.capitalize()] = c
+            total_orders += c
+
+    # Products by category
+    category_breakdown = {}
+    if products_col is not None:
+        all_prods = list(products_col.find({"is_disabled": {"$ne": True}}, {"category_name": 1}))
+        for p in all_prods:
+            cat = p.get("category_name") or "Uncategorized"
+            category_breakdown[cat] = category_breakdown.get(cat, 0) + 1
+
+    # Top sellers by order count
+    top_sellers = []
+    if orders_col is not None:
+        pipeline = [
+            {"$group": {"_id": "$seller_id", "seller_name": {"$first": "$seller_name"}, "order_count": {"$sum": 1}, "revenue": {"$sum": {"$toDouble": "$total"}}}},
+            {"$sort": {"revenue": -1}},
+            {"$limit": 10},
+        ]
+        try:
+            agg = list(orders_col.aggregate(pipeline))
+            top_sellers = [{"seller_id": str(a["_id"]), "seller_name": a.get("seller_name", "Unknown"), "order_count": a["order_count"], "revenue": round(a["revenue"], 2)} for a in agg]
+        except:
+            pass
+
+    return {
+        "status": "success",
+        "total_orders": total_orders,
+        "order_statuses": order_statuses,
+        "category_breakdown": category_breakdown,
+        "top_sellers": top_sellers,
     }
