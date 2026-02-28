@@ -13,7 +13,6 @@ import { Screen, AdminUsersStats } from "../../types";
 import {
   getAdminUsersStatsSimple,
   getAdminRecentOrders,
-  getAdminRecentScans,
 } from "../../services/api";
 
 interface Props {
@@ -24,13 +23,11 @@ interface Props {
 interface DashboardData {
   userStats?: AdminUsersStats;
   recentOrders: any[];
-  recentScans: any[];
 }
 
 export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
   const [data, setData] = useState<DashboardData>({
     recentOrders: [],
-    recentScans: [],
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,12 +39,11 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [userStats, recentOrders, recentScans] = await Promise.all([
+      const [userStats, recentOrders] = await Promise.all([
         getAdminUsersStatsSimple(),
         getAdminRecentOrders(),
-        getAdminRecentScans(),
       ]);
-      setData({ userStats: userStats || undefined, recentOrders, recentScans });
+      setData({ userStats: userStats || undefined, recentOrders });
     } catch (err) {
       console.error("Failed to load admin data:", err);
     } finally {
@@ -84,13 +80,6 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
       desc: "Community",
     },
     {
-      id: "adminScans",
-      icon: "scan",
-      label: "Scans",
-      color: "#F59E0B",
-      desc: "Scan history",
-    },
-    {
       id: "adminVouchers",
       icon: "pricetag",
       label: "Vouchers",
@@ -122,11 +111,11 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Admin Dashboard</Text>
-        <View style={{ width: 24 }} />
+        <View style={ecommerceStyles.backButton} />
       </View>
 
       <ScrollView
@@ -149,9 +138,11 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
             style={{
               flex: 1,
               minWidth: "45%",
-              backgroundColor: "#DBEAFE",
+              backgroundColor: "#1E3A5F",
               borderRadius: 12,
               padding: 16,
+              borderWidth: 1,
+              borderColor: "#3B82F6",
             }}
           >
             <Ionicons name="people" size={24} color="#3B82F6" />
@@ -171,9 +162,11 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
             style={{
               flex: 1,
               minWidth: "45%",
-              backgroundColor: "#D1FAE5",
+              backgroundColor: "#1A3D2E",
               borderRadius: 12,
               padding: 16,
+              borderWidth: 1,
+              borderColor: "#10B981",
             }}
           >
             <Ionicons name="storefront" size={24} color="#10B981" />
@@ -193,31 +186,11 @@ export default function AdminDashboardScreen({ onNavigate, onBack }: Props) {
             style={{
               flex: 1,
               minWidth: "45%",
-              backgroundColor: "#FEF3C7",
+              backgroundColor: "#3D1E1E",
               borderRadius: 12,
               padding: 16,
-            }}
-          >
-            <Ionicons name="scan" size={24} color="#F59E0B" />
-            <Text
-              style={{
-                fontSize: 24,
-                fontWeight: "bold",
-                color: "#FFFFFF",
-                marginTop: 8,
-              }}
-            >
-              {data.recentScans?.length || 0}
-            </Text>
-            <Text style={{ fontSize: 14, color: "#94A3B8" }}>Recent Scans</Text>
-          </View>
-          <View
-            style={{
-              flex: 1,
-              minWidth: "45%",
-              backgroundColor: "#FEE2E2",
-              borderRadius: 12,
-              padding: 16,
+              borderWidth: 1,
+              borderColor: "#EF4444",
             }}
           >
             <Ionicons name="receipt" size={24} color="#EF4444" />

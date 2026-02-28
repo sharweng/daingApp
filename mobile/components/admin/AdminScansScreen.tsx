@@ -12,7 +12,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { AdminScanEntry, Screen } from "../../types";
-import { getAdminScans } from "../../services/api";
+import { getAdminScansSimple } from "../../services/api";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -39,7 +39,7 @@ export default function AdminScansScreen({ onNavigate, onBack }: Props) {
   const loadScans = async () => {
     try {
       setLoading(true);
-      const data = await getAdminScans();
+      const data = await getAdminScansSimple();
       setScans(data);
     } catch (err) {
       console.error("Failed to load scans:", err);
@@ -201,11 +201,11 @@ export default function AdminScansScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Scan History</Text>
-        <View style={{ width: 24 }} />
+        <View style={ecommerceStyles.backButton} />
       </View>
 
       {/* Search & Filter */}

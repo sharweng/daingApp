@@ -1,4 +1,5 @@
 import { StyleSheet } from "react-native";
+import { theme as themeConstants } from "./theme";
 
 const theme = {
   colors: {
@@ -26,13 +27,13 @@ export const homeStyles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: 60,
+    paddingTop: themeConstants.header.paddingTop,
     paddingHorizontal: 24,
     paddingBottom: 16,
   },
 
   appTitle: {
-    fontSize: 22,
+    fontSize: themeConstants.header.titleSize,
     fontWeight: "700",
     color: theme.colors.text,
     letterSpacing: 0.5,

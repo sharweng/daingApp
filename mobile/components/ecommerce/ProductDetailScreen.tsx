@@ -21,6 +21,7 @@ import {
 } from "../../services/api";
 import type { SellerProduct, ProductReview, Screen } from "../../types";
 import { ecommerceStyles as styles } from "../../styles/ecommerce";
+import { ImageGalleryModal } from "../shared/ImageGalleryModal";
 
 const { width } = Dimensions.get("window");
 
@@ -42,6 +43,7 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [galleryVisible, setGalleryVisible] = useState(false);
 
   const loadProduct = useCallback(async () => {
     if (!productId) {
@@ -215,12 +217,17 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
           }}
         >
           {images.map((img, index) => (
-            <Image
+            <TouchableOpacity
               key={index}
-              source={{ uri: img.url }}
-              style={[styles.detailImage, { width: width }]}
-              resizeMode="cover"
-            />
+              activeOpacity={0.9}
+              onPress={() => setGalleryVisible(true)}
+            >
+              <Image
+                source={{ uri: img.url }}
+                style={[styles.detailImage, { width: width }]}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
           ))}
         </ScrollView>
 
@@ -372,6 +379,14 @@ export const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
           <Text style={styles.primaryButtonText}>Buy Now</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Image Gallery Modal */}
+      <ImageGalleryModal
+        visible={galleryVisible}
+        images={images}
+        initialIndex={activeImageIndex}
+        onClose={() => setGalleryVisible(false)}
+      />
     </View>
   );
 };

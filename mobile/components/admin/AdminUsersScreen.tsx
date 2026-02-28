@@ -257,11 +257,11 @@ export default function AdminUsersScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Users</Text>
-        <View style={{ width: 24 }} />
+        <View style={ecommerceStyles.backButton} />
       </View>
 
       {/* Search */}

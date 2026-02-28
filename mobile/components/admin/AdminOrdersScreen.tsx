@@ -7,11 +7,13 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { AdminOrder, Screen } from "../../types";
 import { getAdminOrders } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -41,10 +43,11 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
   const loadOrders = async () => {
     try {
       setLoading(true);
-      const data = await getAdminOrders();
-      setOrders(data);
+      const data = await getAdminOrders(API_BASE_URL);
+      setOrders(data.orders || []);
     } catch (err) {
       console.error("Failed to load orders:", err);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -160,11 +163,11 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>All Orders</Text>
-        <View style={{ width: 24 }} />
+        <View style={ecommerceStyles.backButton} />
       </View>
 
       {/* Search */}
@@ -182,14 +185,15 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
       </View>
 
       {/* Status Filter */}
-      <FlatList
+      <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        data={statuses}
-        keyExtractor={(item) => item}
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
-        renderItem={({ item }) => (
+        style={{ flexGrow: 0, flexShrink: 0, maxHeight: 56 }}
+      >
+        {statuses.map((item) => (
           <TouchableOpacity
+            key={item}
             style={{
               paddingHorizontal: 16,
               paddingVertical: 8,
@@ -212,8 +216,8 @@ export default function AdminOrdersScreen({ onNavigate, onBack }: Props) {
               {item}
             </Text>
           </TouchableOpacity>
-        )}
-      />
+        ))}
+      </ScrollView>
 
       {loading ? (
         <View

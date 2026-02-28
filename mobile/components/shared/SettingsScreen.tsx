@@ -232,13 +232,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 color="#EF4444"
               />
               <MenuItem
-                icon="scan-outline"
-                label="Scans"
-                subtitle="View all scan history"
-                onPress={() => onNavigate("adminScans")}
-                color="#EF4444"
-              />
-              <MenuItem
                 icon="receipt-outline"
                 label="Orders"
                 subtitle="View all marketplace orders"

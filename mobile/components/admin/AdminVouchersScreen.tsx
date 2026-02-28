@@ -305,11 +305,14 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Vouchers</Text>
-        <TouchableOpacity onPress={() => openModal()}>
+        <TouchableOpacity
+          style={ecommerceStyles.backButton}
+          onPress={() => openModal()}
+        >
           <Ionicons name="add" size={24} color="#3B82F6" />
         </TouchableOpacity>
       </View>

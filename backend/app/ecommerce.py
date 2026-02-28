@@ -84,6 +84,14 @@ def _get_users_collection():
         return None
 
 
+def _get_audit_logs_collection():
+    """Return audit_logs collection from MongoDB."""
+    try:
+        return get_db()["audit_logs"]
+    except Exception:
+        return None
+
+
 def _normalize_product(doc: dict) -> dict:
     """Normalize a product document for API response."""
     return {
@@ -1153,7 +1161,7 @@ async def create_seller_product(body: ProductCreateBody, user=Depends(_require_s
 
     category_name = ""
     category_id = None
-    if body.category_id and categories_collection:
+    if body.category_id and categories_collection is not None:
         try:
             cat = categories_collection.find_one({"_id": ObjectId(body.category_id)})
             if cat:
@@ -1221,7 +1229,7 @@ async def update_seller_product(product_id: str, body: ProductUpdateBody, user=D
         updates["status"] = body.status
     if body.main_image_index is not None:
         updates["main_image_index"] = int(body.main_image_index)
-    if body.category_id is not None and categories_collection:
+    if body.category_id is not None and categories_collection is not None:
         try:
             cat = categories_collection.find_one({"_id": ObjectId(body.category_id)})
             if cat:
@@ -2107,7 +2115,7 @@ async def get_admin_orders(
         items = doc.get("items", [])
 
         buyer_name = "Unknown"
-        if user_id and users_collection:
+        if user_id and users_collection is not None:
             try:
                 buyer_user = users_collection.find_one({"_id": ObjectId(user_id)})
                 if buyer_user:
@@ -2118,7 +2126,7 @@ async def get_admin_orders(
         seller_name = "Unknown"
         order_category = ""
 
-        if items and products_collection:
+        if items and products_collection is not None:
             first_item = items[0]
             product_id = first_item.get("product_id")
 
@@ -2127,7 +2135,7 @@ async def get_admin_orders(
                     product = products_collection.find_one({"_id": ObjectId(product_id)})
                     if product:
                         seller_id = product.get("seller_id")
-                        if seller_id and users_collection:
+                        if seller_id and users_collection is not None:
                             try:
                                 seller_user = users_collection.find_one({"_id": ObjectId(seller_id)})
                                 if seller_user:
@@ -2201,7 +2209,7 @@ async def get_admin_order_detail(order_id: str, user=Depends(_require_admin)):
     user_id = order_doc.get("user_id")
     buyer_name = "Unknown"
 
-    if user_id and users_collection:
+    if user_id and users_collection is not None:
         try:
             buyer_user = users_collection.find_one({"_id": ObjectId(user_id)})
             if buyer_user:
@@ -2213,7 +2221,7 @@ async def get_admin_order_detail(order_id: str, user=Depends(_require_admin)):
     category = "General"
     items = order_doc.get("items", [])
 
-    if items and products_collection:
+    if items and products_collection is not None:
         first_item = items[0]
         product_id = first_item.get("product_id")
 
@@ -2223,7 +2231,7 @@ async def get_admin_order_detail(order_id: str, user=Depends(_require_admin)):
                 if product:
                     category = product.get("category", "General")
                     seller_id = product.get("seller_id")
-                    if seller_id and users_collection:
+                    if seller_id and users_collection is not None:
                         try:
                             seller_user = users_collection.find_one({"_id": ObjectId(seller_id)})
                             if seller_user:
@@ -3019,7 +3027,7 @@ async def get_admin_payouts(
         seller_name = "Unknown"
 
         # Get seller name
-        if sid and users_collection:
+        if sid and users_collection is not None:
             try:
                 seller_user = users_collection.find_one({"_id": ObjectId(sid)})
                 if seller_user:
@@ -3581,3 +3589,52 @@ async def get_admin_market_segmentation(user=Depends(_require_admin)):
         "category_breakdown": category_breakdown,
         "top_sellers": top_sellers,
     }
+
+
+# ============================================
+# ADMIN AUDIT LOGS
+# ============================================
+
+@router.get("/admin/audit-logs")
+async def get_admin_audit_logs(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    actor: Optional[str] = None,
+    limit: int = 200,
+    user=Depends(_require_admin)
+):
+    """Get audit logs for admin. Returns recent activity logs."""
+    collection = _get_audit_logs_collection()
+    if collection is None:
+        return {"status": "success", "entries": []}
+
+    query = {}
+    if category and category.lower() not in ("all", ""):
+        query["category"] = category
+    if status and status.lower() not in ("all", ""):
+        query["status"] = status
+    if actor:
+        query["actor"] = {"$regex": re.escape(actor), "$options": "i"}
+
+    safe_limit = min(max(limit, 1), 500)
+    try:
+        cursor = collection.find(query).sort("timestamp", -1).limit(safe_limit)
+        entries = []
+        for doc in cursor:
+            entries.append({
+                "id": doc.get("id") or str(doc.get("_id")),
+                "timestamp": doc.get("timestamp") or "",
+                "userName": doc.get("actor") or "System",
+                "role": doc.get("role") or "system",
+                "action": doc.get("action") or "other",
+                "category": doc.get("category") or "General",
+                "entity": doc.get("entity") or "",
+                "entityId": doc.get("entity_id") or "",
+                "description": doc.get("details") or doc.get("description") or "",
+                "ipAddress": doc.get("ip") or "",
+                "resource": doc.get("category") or "",
+            })
+        return {"status": "success", "entries": entries}
+    except Exception as e:
+        print(f"Error fetching audit logs: {e}")
+        return {"status": "success", "entries": []}
