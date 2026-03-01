@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../styles/theme";
@@ -14,6 +15,15 @@ import {
   getDaingTypeBySlug,
 } from "../../data/daingTypes";
 import type { Screen, NavigationParams } from "../../types";
+
+// Daing type images
+const DAING_IMAGES: { [key: string]: any } = {
+  bisugo: require("../../assets/images/daing/bisugo.jpg"),
+  "dalagang-bukid": require("../../assets/images/daing/dalagangBukid.jpg"),
+  danggit: require("../../assets/images/daing/danggit.jpg"),
+  espada: require("../../assets/images/daing/espada.jpg"),
+  "flying-fish": require("../../assets/images/daing/flyingFish.jpg"),
+};
 
 interface AboutDaingScreenProps {
   onNavigate: (screen: Screen, params?: NavigationParams) => void;
@@ -55,7 +65,11 @@ const AboutDaingScreen: React.FC<AboutDaingScreenProps> = ({
           <View
             style={[styles.typeHeader, { backgroundColor: selectedType.color }]}
           >
-            <Text style={styles.typeHeaderIcon}>{selectedType.icon}</Text>
+            <Image
+              source={DAING_IMAGES[selectedType.slug]}
+              style={styles.typeHeaderImage}
+              resizeMode="cover"
+            />
             <Text style={styles.typeHeaderName}>{selectedType.name}</Text>
           </View>
 
@@ -149,7 +163,11 @@ const AboutDaingScreen: React.FC<AboutDaingScreenProps> = ({
                   { backgroundColor: type.color },
                 ]}
               >
-                <Text style={styles.typeIcon}>{type.icon}</Text>
+                <Image
+                  source={DAING_IMAGES[type.slug]}
+                  style={styles.typeImage}
+                  resizeMode="cover"
+                />
               </View>
               <Text style={styles.typeName}>{type.name}</Text>
               <Ionicons
@@ -282,6 +300,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+    overflow: "hidden",
+  },
+  typeImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
   },
   typeIcon: {
     fontSize: 24,
@@ -298,6 +322,14 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: "center",
     marginBottom: 16,
+  },
+  typeHeaderImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 8,
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.3)",
   },
   typeHeaderIcon: {
     fontSize: 48,

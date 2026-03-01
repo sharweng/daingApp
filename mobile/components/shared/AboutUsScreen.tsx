@@ -6,11 +6,23 @@ import {
   ScrollView,
   StyleSheet,
   Linking,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../styles/theme";
 import { teamMembers, tupInfo, TeamMember } from "../../data/team";
 import type { Screen, NavigationParams } from "../../types";
+
+// TUP Logo
+const TUP_LOGO = require("../../assets/images/about/tup-t-logo.png");
+
+// Team member images mapped by id
+const TEAM_IMAGES: { [key: string]: any } = {
+  "1": require("../../assets/images/about/eaad_madriaga_p.jfif"),
+  "2": require("../../assets/images/about/member1.jfif"),
+  "3": require("../../assets/images/about/member2.jpg"),
+  "4": require("../../assets/images/about/member3.png"),
+};
 
 interface AboutUsScreenProps {
   onNavigate: (screen: Screen, params?: NavigationParams) => void;
@@ -47,8 +59,12 @@ const AboutUsScreen: React.FC<AboutUsScreenProps> = ({
       >
         {/* TUP Section */}
         <View style={styles.tupCard}>
-          <View style={styles.tupIconContainer}>
-            <Ionicons name="school" size={32} color={theme.colors.primary} />
+          <View style={styles.tupLogoContainer}>
+            <Image
+              source={TUP_LOGO}
+              style={styles.tupLogo}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.tupName}>{tupInfo.name}</Text>
           <Text style={styles.tupDescription}>{tupInfo.description}</Text>
@@ -92,9 +108,17 @@ const TeamMemberCard: React.FC<TeamMemberCardProps> = ({
 
       {/* Avatar */}
       <View style={styles.memberAvatarContainer}>
-        <View style={styles.memberAvatar}>
-          <Ionicons name="person" size={28} color="#fff" />
-        </View>
+        {TEAM_IMAGES[member.id] ? (
+          <Image
+            source={TEAM_IMAGES[member.id]}
+            style={styles.memberAvatarImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.memberAvatar}>
+            <Ionicons name="person" size={28} color="#fff" />
+          </View>
+        )}
       </View>
 
       {/* Info */}
@@ -222,6 +246,20 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     marginBottom: 24,
   },
+  tupLogoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  tupLogo: {
+    width: 70,
+    height: 70,
+  },
   tupIconContainer: {
     width: 64,
     height: 64,
@@ -288,6 +326,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 3,
+    borderColor: `${theme.colors.primary}30`,
+  },
+  memberAvatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     borderWidth: 3,
     borderColor: `${theme.colors.primary}30`,
   },
