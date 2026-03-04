@@ -165,6 +165,69 @@ def validate_session(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def validate_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Validate token - tries session token first, then Firebase token.
+    
+    Args:
+        token: Session token or Firebase ID token
+        
+    Returns:
+        User info dict with user_id and role, or None if invalid
+    """
+    # First, try session token validation
+    session = validate_session(token)
+    if session:
+        print(f"✅ Valid session token for user: {session['user_id']}")
+        return session
+    
+    # If session validation fails, try Firebase token
+    if _init_firebase_admin() and firebase_auth:
+        try:
+            decoded = firebase_auth.verify_id_token(token)
+            firebase_uid = decoded.get("uid")
+            email = (decoded.get("email") or "").strip().lower()
+            
+            if not firebase_uid and not email:
+                print("❌ Firebase token missing uid and email")
+                return None
+            
+            # Look up user in database
+            db = get_db()
+            if db is None:
+                print("❌ Database not connected")
+                return None
+            
+            user = None
+            if firebase_uid:
+                user = db["users"].find_one({"firebase_uid": firebase_uid})
+            if not user and email:
+                user = db["users"].find_one({"email": email})
+            
+            if not user:
+                print(f"❌ Firebase user not found in database: {email or firebase_uid}")
+                return None
+            
+            # Update firebase_uid if needed
+            if firebase_uid and user.get("firebase_uid") != firebase_uid:
+                db["users"].update_one(
+                    {"_id": user["_id"]},
+                    {"$set": {"firebase_uid": firebase_uid}}
+                )
+            
+            user_id = str(user["_id"])
+            role = user.get("role", "user")
+            print(f"✅ Valid Firebase token for user: {user_id} (role: {role})")
+            return {"user_id": user_id, "role": role}
+            
+        except Exception as e:
+            print(f"❌ Firebase token validation failed: {e}")
+            return None
+    
+    print("❌ Token validation failed (no valid session or Firebase token)")
+    return None
+
+
 def delete_session(token: str) -> bool:
     """
     Delete a session (logout).

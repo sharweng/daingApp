@@ -153,33 +153,36 @@ def get_analytics_summary(days: int = 7) -> dict:
         return empty_response
     
     try:
-        # Total scans
-        total_scans = scans_collection.count_documents({})
-        daing_scans = scans_collection.count_documents({"is_daing": True})
+        # Calculate time cutoff for filtering
+        time_cutoff = datetime.now() - timedelta(days=days)
+        time_filter = {"timestamp": {"$gte": time_cutoff}}
+        
+        # Total scans (within time range)
+        total_scans = scans_collection.count_documents(time_filter)
+        daing_scans = scans_collection.count_documents({**time_filter, "is_daing": True})
         non_daing_scans = total_scans - daing_scans
         
-        # Fish type distribution
+        # Fish type distribution (within time range)
         pipeline = [
-            {"$match": {"is_daing": True}},
+            {"$match": {**time_filter, "is_daing": True}},
             {"$unwind": "$detections"},
             {"$group": {"_id": "$detections.fish_type", "count": {"$sum": 1}}}
         ]
         fish_types = list(scans_collection.aggregate(pipeline))
         fish_type_distribution = {item["_id"]: item["count"] for item in fish_types}
         
-        # Average confidence by fish type
+        # Average confidence by fish type (within time range)
         pipeline = [
-            {"$match": {"is_daing": True}},
+            {"$match": {**time_filter, "is_daing": True}},
             {"$unwind": "$detections"},
             {"$group": {"_id": "$detections.fish_type", "avg_conf": {"$avg": "$detections.confidence"}}}
         ]
         avg_conf = list(scans_collection.aggregate(pipeline))
         average_confidence = {item["_id"]: round(item["avg_conf"], 4) for item in avg_conf}
         
-        # Daily scans (configurable time range)
-        time_cutoff = datetime.now() - timedelta(days=days)
+        # Daily scans (within time range)
         pipeline = [
-            {"$match": {"timestamp": {"$gte": time_cutoff}}},
+            {"$match": time_filter},
             {"$group": {
                 "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
                 "count": {"$sum": 1}
@@ -189,9 +192,9 @@ def get_analytics_summary(days: int = 7) -> dict:
         daily = list(scans_collection.aggregate(pipeline))
         daily_scans = {item["_id"]: item["count"] for item in daily}
         
-        # Color Consistency Analysis
+        # Color Consistency Analysis (within time range)
         pipeline = [
-            {"$match": {"is_daing": True, "color_analysis.consistency_score": {"$exists": True, "$gt": 0}}},
+            {"$match": {**time_filter, "is_daing": True, "color_analysis.consistency_score": {"$exists": True, "$gt": 0}}},
             {"$group": {
                 "_id": None,
                 "avg_score": {"$avg": "$color_analysis.consistency_score"},
@@ -201,18 +204,19 @@ def get_analytics_summary(days: int = 7) -> dict:
         color_avg = list(scans_collection.aggregate(pipeline))
         avg_color_score = round(color_avg[0]["avg_score"], 1) if color_avg else 0
         
-        # Quality grade distribution
+        # Quality grade distribution (within time range)
         grade_distribution = {"Export": 0, "Local": 0, "Reject": 0}
         for grade in ["Export", "Local", "Reject"]:
             count = scans_collection.count_documents({
+                **time_filter,
                 "is_daing": True,
                 "color_analysis.quality_grade": grade
             })
             grade_distribution[grade] = count
         
-        # Color consistency by fish type
+        # Color consistency by fish type (within time range)
         pipeline = [
-            {"$match": {"is_daing": True, "color_analysis.consistency_score": {"$exists": True, "$gt": 0}}},
+            {"$match": {**time_filter, "is_daing": True, "color_analysis.consistency_score": {"$exists": True, "$gt": 0}}},
             {"$unwind": "$detections"},
             {"$group": {
                 "_id": "$detections.fish_type",
@@ -229,21 +233,22 @@ def get_analytics_summary(days: int = 7) -> dict:
         }
         
         # =====================================================
-        # MOLD ANALYSIS AGGREGATION
+        # MOLD ANALYSIS AGGREGATION (within time range)
         # =====================================================
         
-        # Mold severity distribution
+        # Mold severity distribution (within time range)
         severity_distribution = {"None": 0, "Low": 0, "Moderate": 0, "Severe": 0}
         for severity in severity_distribution.keys():
             count = scans_collection.count_documents({
+                **time_filter,
                 "is_daing": True,
                 "mold_analysis.overall_severity": severity
             })
             severity_distribution[severity] = count
         
-        # Average mold coverage
+        # Average mold coverage (within time range)
         pipeline = [
-            {"$match": {"is_daing": True, "mold_analysis.avg_coverage_percent": {"$exists": True}}},
+            {"$match": {**time_filter, "is_daing": True, "mold_analysis.avg_coverage_percent": {"$exists": True}}},
             {"$group": {
                 "_id": None,
                 "avg_coverage": {"$avg": "$mold_analysis.avg_coverage_percent"},
@@ -253,14 +258,15 @@ def get_analytics_summary(days: int = 7) -> dict:
         mold_avg = list(scans_collection.aggregate(pipeline))
         avg_mold_coverage = round(mold_avg[0]["avg_coverage"], 2) if mold_avg else 0
         
-        # Spatial zone aggregation (top/bottom for split fish)
+        # Spatial zone aggregation (top/bottom for split fish) - within time range
         spatial_zones = {
             "top": {"fish_affected": 0, "total_patches": 0},
             "bottom": {"fish_affected": 0, "total_patches": 0}
         }
         
-        # Get all scans with spatial data
+        # Get all scans with spatial data (within time range)
         scans_with_mold = list(scans_collection.find({
+            **time_filter,
             "is_daing": True,
             "mold_analysis.spatial_summary.zones": {"$exists": True}
         }, {"mold_analysis.spatial_summary.zones": 1}))
@@ -274,9 +280,9 @@ def get_analytics_summary(days: int = 7) -> dict:
                     if patches > 0:
                         spatial_zones[zone_name]["fish_affected"] += 1
         
-        # Mold analysis by fish type
+        # Mold analysis by fish type (within time range)
         pipeline = [
-            {"$match": {"is_daing": True, "mold_analysis.overall_severity": {"$exists": True}}},
+            {"$match": {**time_filter, "is_daing": True, "mold_analysis.overall_severity": {"$exists": True}}},
             {"$unwind": "$detections"},
             {"$group": {
                 "_id": "$detections.fish_type",
@@ -303,7 +309,7 @@ def get_analytics_summary(days: int = 7) -> dict:
         }
         
         # =====================================================
-        # DEFECT PATTERN ANALYSIS
+        # DEFECT PATTERN ANALYSIS (within time range)
         # Tracks frequency and types of quality issues
         # =====================================================
         
@@ -314,25 +320,29 @@ def get_analytics_summary(days: int = 7) -> dict:
             "acceptable_quality": 0       # Good score but not export grade
         }
         
-        # Count defects by category
+        # Count defects by category (within time range)
         defect_frequency["poor_color_uniformity"] = scans_collection.count_documents({
+            **time_filter,
             "is_daing": True,
             "color_analysis.consistency_score": {"$exists": True, "$lt": 50}
         })
         
         defect_frequency["color_discoloration"] = scans_collection.count_documents({
+            **time_filter,
             "is_daing": True,
             "color_analysis.consistency_score": {"$exists": True, "$lt": 30}
         })
         
         defect_frequency["acceptable_quality"] = scans_collection.count_documents({
+            **time_filter,
             "is_daing": True,
             "color_analysis.consistency_score": {"$exists": True, "$gte": 50, "$lt": 75}
         })
         
-        # Identify primary defects for Reject and Local grade fish
+        # Identify primary defects for Reject and Local grade fish (within time range)
         pipeline = [
             {"$match": {
+                **time_filter,
                 "is_daing": True,
                 "color_analysis.quality_grade": {"$in": ["Reject", "Local"]}
             }},
@@ -369,13 +379,13 @@ def get_analytics_summary(days: int = 7) -> dict:
             }
         
         # =====================================================
-        # QUALITY GRADE CLASSIFICATION SUMMARY
+        # QUALITY GRADE CLASSIFICATION SUMMARY (within time range)
         # Comprehensive grading records by species and date
         # =====================================================
         
-        # Quality classification by species
+        # Quality classification by species (within time range)
         pipeline = [
-            {"$match": {"is_daing": True, "color_analysis.quality_grade": {"$exists": True}}},
+            {"$match": {**time_filter, "is_daing": True, "color_analysis.quality_grade": {"$exists": True}}},
             {"$unwind": "$detections"},
             {"$group": {
                 "_id": {
@@ -518,15 +528,18 @@ def get_user_analytics_summary(user_id: str, days: int = 7) -> dict:
         return empty_response
     
     try:
-        # Base filter for user
-        user_filter = {"user_id": user_id}
+        # Calculate time cutoff for filtering
+        time_cutoff = datetime.now() - timedelta(days=days)
         
-        # Total scans for this user
+        # Base filter for user within time range
+        user_filter = {"user_id": user_id, "timestamp": {"$gte": time_cutoff}}
+        
+        # Total scans for this user (within time range)
         total_scans = scans_collection.count_documents(user_filter)
         daing_scans = scans_collection.count_documents({**user_filter, "is_daing": True})
         non_daing_scans = total_scans - daing_scans
         
-        # Fish type distribution
+        # Fish type distribution (within time range)
         pipeline = [
             {"$match": {**user_filter, "is_daing": True}},
             {"$unwind": "$detections"},
@@ -535,7 +548,7 @@ def get_user_analytics_summary(user_id: str, days: int = 7) -> dict:
         fish_types = list(scans_collection.aggregate(pipeline))
         fish_type_distribution = {item["_id"]: item["count"] for item in fish_types}
         
-        # Average confidence by fish type
+        # Average confidence by fish type (within time range)
         pipeline = [
             {"$match": {**user_filter, "is_daing": True}},
             {"$unwind": "$detections"},
@@ -544,10 +557,9 @@ def get_user_analytics_summary(user_id: str, days: int = 7) -> dict:
         avg_conf = list(scans_collection.aggregate(pipeline))
         average_confidence = {item["_id"]: round(item["avg_conf"], 4) for item in avg_conf}
         
-        # Daily scans (configurable time range)
-        time_cutoff = datetime.now() - timedelta(days=days)
+        # Daily scans (within time range)
         pipeline = [
-            {"$match": {**user_filter, "timestamp": {"$gte": time_cutoff}}},
+            {"$match": user_filter},
             {"$group": {
                 "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
                 "count": {"$sum": 1}
@@ -557,7 +569,7 @@ def get_user_analytics_summary(user_id: str, days: int = 7) -> dict:
         daily = list(scans_collection.aggregate(pipeline))
         daily_scans = {item["_id"]: item["count"] for item in daily}
         
-        # Color Consistency Analysis
+        # Color Consistency Analysis (within time range)
         pipeline = [
             {"$match": {**user_filter, "is_daing": True, "color_analysis.consistency_score": {"$exists": True, "$gt": 0}}},
             {"$group": {
@@ -569,7 +581,7 @@ def get_user_analytics_summary(user_id: str, days: int = 7) -> dict:
         color_avg = list(scans_collection.aggregate(pipeline))
         avg_color_score = round(color_avg[0]["avg_score"], 1) if color_avg else 0
         
-        # Quality grade distribution
+        # Quality grade distribution (within time range)
         grade_distribution = {"Export": 0, "Local": 0, "Reject": 0}
         for grade in ["Export", "Local", "Reject"]:
             count = scans_collection.count_documents({
@@ -579,7 +591,7 @@ def get_user_analytics_summary(user_id: str, days: int = 7) -> dict:
             })
             grade_distribution[grade] = count
         
-        # Color consistency by fish type
+        # Color consistency by fish type (within time range)
         pipeline = [
             {"$match": {**user_filter, "is_daing": True, "color_analysis.consistency_score": {"$exists": True, "$gt": 0}}},
             {"$unwind": "$detections"},

@@ -37,6 +37,7 @@ from .auth import (
     login_user,
     logout_user,
     validate_session,
+    validate_token,
     get_user_by_id,
     # Web auth (JWT-based)
     RegisterBody,
@@ -104,10 +105,10 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     
     token = authorization.replace("Bearer ", "")
     
-    # Try session-based auth first (mobile)
-    session = validate_session(token)
-    if session:
-        user = get_user_by_id(session["user_id"])
+    # Try session-based auth first (mobile), fall back to Firebase (web)
+    auth_result = validate_token(token)
+    if auth_result:
+        user = get_user_by_id(auth_result["user_id"])
         if user:
             # Check if user is inactive (need to get full user from DB)
             from bson import ObjectId
@@ -451,11 +452,11 @@ async def update_profile(body: ProfileUpdateBody, authorization: Optional[str] =
     db = get_db()
     user = None
     
-    # Try session-based auth first (mobile)
-    session = validate_session(token)
-    if session:
+    # Try session-based auth first (mobile), fall back to Firebase (web)
+    auth_result = validate_token(token)
+    if auth_result:
         from bson import ObjectId
-        user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+        user = db["users"].find_one({"_id": ObjectId(auth_result["user_id"])})
     
     # Fall back to JWT/Firebase auth (web)
     if not user:
@@ -541,11 +542,11 @@ async def upload_profile_avatar(file: UploadFile = File(...), authorization: Opt
     db = get_db()
     user = None
     
-    # Try session-based auth first (mobile)
-    session = validate_session(token)
-    if session:
+    # Try session-based auth first (mobile), fall back to Firebase (web)
+    auth_result = validate_token(token)
+    if auth_result:
         from bson import ObjectId
-        user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+        user = db["users"].find_one({"_id": ObjectId(auth_result["user_id"])})
     
     # Fall back to JWT/Firebase auth (web)
     if not user:
@@ -718,9 +719,9 @@ async def analyze_fish(
     user_id = None
     if authorization:
         token = authorization.replace("Bearer ", "")
-        session = validate_session(token)
-        if session:
-            user_id = session["user_id"]
+        auth_result = validate_token(token)
+        if auth_result:
+            user_id = auth_result["user_id"]
     # Clamp confidence threshold between 0.1 and 1.0
     confidence_threshold = max(0.1, min(1.0, confidence_threshold))
     print(f"Received an image for AI Analysis... (auto_save_dataset: {auto_save_dataset}, confidence: {confidence_threshold:.0%}, hide_color_overlay: {hide_color_overlay})")
@@ -899,12 +900,12 @@ async def get_history(authorization: Optional[str] = Header(None)):
         print(f"📋 /history called with auth: {'present' if authorization else 'MISSING'}")
         if authorization:
             token = authorization.replace("Bearer ", "")
-            session = validate_session(token)
-            if session:
-                user_id = session["user_id"]
+            auth_result = validate_token(token)
+            if auth_result:
+                user_id = auth_result["user_id"]
                 print(f"✅ Authenticated user: {user_id}")
             else:
-                print("❌ Invalid session token")
+                print("❌ Invalid token (session or Firebase)")
         
         if user_id:
             # Return user's own history from MongoDB
@@ -930,12 +931,12 @@ async def get_all_history(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = authorization.replace("Bearer ", "")
-    session = validate_session(token)
+    auth_result = validate_token(token)
     
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    if not auth_result:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
-    if session["role"] != "admin":
+    if auth_result["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
@@ -1017,9 +1018,10 @@ async def analytics_summary(
     user_id = None
     if authorization:
         token = authorization.replace("Bearer ", "")
-        session = validate_session(token)
-        if session:
-            user_id = session["user_id"]
+        auth_result = validate_token(token)
+        if auth_result:
+            user_id = auth_result["user_id"]
+            print(f"📊 Analytics for user: {user_id} (days={days})")
     
     if user_id:
         return get_user_analytics_summary(user_id, days)
@@ -1047,9 +1049,10 @@ async def all_analytics_summary(
     # If authorization is provided, validate it but don't require it
     if authorization:
         token = authorization.replace("Bearer ", "")
-        session = validate_session(token)
+        auth_result = validate_token(token)
         # Token provided but invalid - still allow access to public data
     
+    print(f"📊 Overall analytics (days={days})")
     return get_analytics_summary(days)
 
 
