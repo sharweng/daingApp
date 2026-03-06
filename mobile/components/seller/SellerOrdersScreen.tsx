@@ -138,7 +138,7 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
         <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#1E293B" />
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Orders</Text>
         <View style={{ width: 24 }} />

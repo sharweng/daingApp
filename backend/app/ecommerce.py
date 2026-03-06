@@ -16,12 +16,32 @@ from pydantic import BaseModel
 from bson import ObjectId
 import cloudinary
 import cloudinary.uploader
+from better_profanity import profanity
 
 from .config import get_db
 from .auth import get_current_user_web, require_seller_user
 from .order_receipt import build_receipt_pdf_bytes
 
 router = APIRouter()
+
+
+# ============================================
+# BAD WORDS FILTER
+# ============================================
+
+# Add custom Filipino bad words to the profanity filter
+CUSTOM_BAD_WORDS = [
+    "puta", "gago", "tangina", "bobo", "tanga", "putangina", "leche", "tarantado",
+    "ulol", "inutil", "hayop", "pakyu", "kupal"
+]
+profanity.add_censor_words(CUSTOM_BAD_WORDS)
+
+
+def _censor_bad_words(text: str) -> str:
+    """Replace bad words with asterisks using better-profanity."""
+    if not text:
+        return text
+    return profanity.censor(text)
 
 
 # ============================================
@@ -2337,10 +2357,12 @@ def _normalize_review(doc: dict) -> dict:
 
 
 def _validate_review_comment(comment: str) -> str:
-    """Validate and clean review comment."""
+    """Validate and clean review comment with bad words filter."""
     if not comment:
         return ""
-    return comment.strip()[:500]  # Max 500 chars
+    # Clean, limit length, and censor bad words
+    cleaned = comment.strip()[:500]  # Max 500 chars
+    return _censor_bad_words(cleaned)
 
 
 def _user_has_ordered_product(orders_collection, user_id: str, product_id: str) -> bool:

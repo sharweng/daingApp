@@ -11,7 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { OrderDetail, Screen } from "../../types";
-import { getOrderById, updateAdminOrderStatus } from "../../services/api";
+import { getOrderById } from "../../services/api";
 import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
@@ -31,9 +31,6 @@ const statusColors: Record<string, string> = {
 // Full status flow for display purposes
 const statusFlow = ["pending", "confirmed", "shipped", "delivered"];
 
-// Admin can only change status to shipped or cancelled (delivered is user-only)
-const adminAllowedStatuses = ["shipped", "cancelled"];
-
 export default function AdminOrderDetailScreen({
   orderId,
   onNavigate,
@@ -41,7 +38,6 @@ export default function AdminOrderDetailScreen({
 }: Props) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     loadOrder();
@@ -58,50 +54,6 @@ export default function AdminOrderDetailScreen({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleUpdateStatus = async (newStatus: string) => {
-    if (!order) return;
-
-    Alert.alert("Update Status", `Change order status to "${newStatus}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Update",
-        onPress: async () => {
-          try {
-            setUpdating(true);
-            await updateAdminOrderStatus(API_BASE_URL, order.id, newStatus);
-            await loadOrder();
-            Alert.alert("Success", "Order status updated");
-          } catch (err) {
-            Alert.alert("Error", "Failed to update status");
-          } finally {
-            setUpdating(false);
-          }
-        },
-      },
-    ]);
-  };
-
-  const showStatusOptions = () => {
-    if (!order || order.status === "delivered" || order.status === "cancelled")
-      return;
-
-    // Admin can only set to shipped or cancelled
-    const options: { text: string; onPress?: () => void; style?: string }[] =
-      adminAllowedStatuses
-        .filter((s) => s !== order.status)
-        .map((status) => ({
-          text:
-            status === "cancelled"
-              ? "Cancel Order"
-              : status.charAt(0).toUpperCase() + status.slice(1),
-          onPress: () => handleUpdateStatus(status),
-        }));
-
-    options.push({ text: "Close", style: "cancel" });
-
-    Alert.alert("Change Order Status", "Select new status:", options as any);
   };
 
   if (loading) {
@@ -132,8 +84,6 @@ export default function AdminOrderDetailScreen({
   }
 
   const statusColor = statusColors[order.status] || "#64748B";
-  const canUpdateStatus =
-    order.status !== "delivered" && order.status !== "cancelled";
 
   return (
     <View style={ecommerceStyles.container}>
@@ -159,50 +109,16 @@ export default function AdminOrderDetailScreen({
             borderColor: statusColor,
           }}
         >
-          <View
+          <Text
             style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
+              fontSize: 18,
+              fontWeight: "bold",
+              color: statusColor,
+              textTransform: "capitalize",
             }}
           >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "bold",
-                color: statusColor,
-                textTransform: "capitalize",
-              }}
-            >
-              {order.status}
-            </Text>
-            {canUpdateStatus && (
-              <TouchableOpacity
-                style={{
-                  backgroundColor: "#334155",
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 8,
-                }}
-                onPress={showStatusOptions}
-                disabled={updating}
-              >
-                {updating ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text
-                    style={{
-                      color: "#FFFFFF",
-                      fontSize: 12,
-                      fontWeight: "600",
-                    }}
-                  >
-                    Change Status
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
+            {order.status}
+          </Text>
           <Text style={{ fontSize: 14, color: "#94A3B8", marginTop: 4 }}>
             Ordered on{" "}
             {new Date(order.dateOrdered || order.created_at).toLocaleDateString(

@@ -1528,6 +1528,28 @@ export const deleteComment = async (
   }
 };
 
+export const editComment = async (
+  baseUrl: string,
+  commentId: string,
+  text: string,
+): Promise<{ success: boolean; comment?: CommunityComment }> => {
+  try {
+    const formData = new FormData();
+    formData.append("text", text);
+    const response = await axios.patch(
+      `${normalizeUrl(baseUrl)}/community/comments/${commentId}`,
+      formData,
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "multipart/form-data" },
+        timeout: 10000,
+      },
+    );
+    return { success: true, comment: response.data.comment };
+  } catch (error) {
+    return { success: false };
+  }
+};
+
 export const deleteCommunityPost = async (
   baseUrl: string,
   postId: string,

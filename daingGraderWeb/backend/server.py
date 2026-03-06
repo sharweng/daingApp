@@ -1596,6 +1596,57 @@ def delete_comment(comment_id: str, user=Depends(_get_current_user)):
   
   return {"status": "success", "message": "Comment deleted"}
 
+
+@app.put("/community/comments/{comment_id}")
+@app.patch("/community/comments/{comment_id}")
+def edit_comment(comment_id: str, text: str = Form(...), user=Depends(_get_current_user)):
+  """Edit own comment - only the comment owner can edit. Supports both PUT and PATCH."""
+  comments_collection = _get_comments_collection()
+  
+  if comments_collection is None:
+    raise HTTPException(status_code=500, detail="Database not available")
+  
+  try:
+    oid = ObjectId(comment_id)
+  except:
+    raise HTTPException(status_code=400, detail="Invalid comment ID")
+  
+  comment = comments_collection.find_one({"_id": oid})
+  if not comment:
+    raise HTTPException(status_code=404, detail="Comment not found")
+  
+  user_id = str(user.get("_id", user.get("id", "")))
+  
+  # Only owner can edit
+  if comment.get("author_id") != user_id:
+    raise HTTPException(status_code=403, detail="Not authorized to edit this comment")
+  
+  # Censor bad words
+  censored_text = _censor_bad_words(text.strip())
+  
+  comments_collection.update_one(
+    {"_id": oid},
+    {"$set": {
+      "text": censored_text,
+      "updated_at": datetime.now().isoformat(),
+    }}
+  )
+  
+  updated = comments_collection.find_one({"_id": oid})
+  return {
+    "status": "success",
+    "comment": {
+      "id": str(updated["_id"]),
+      "post_id": updated.get("post_id", ""),
+      "author_id": updated.get("author_id", ""),
+      "author_name": updated.get("author_name", "Anonymous"),
+      "text": updated.get("text", ""),
+      "created_at": updated.get("created_at", ""),
+      "updated_at": updated.get("updated_at", ""),
+    }
+  }
+
+
 def _get_users_collection():
   """Return users collection from MongoDB."""
   try:
@@ -3148,7 +3199,8 @@ def _validate_review_comment(comment: str):
     raise HTTPException(status_code=400, detail="Comment is required")
   if not REVIEW_COMMENT_REGEX.fullmatch(cleaned):
     raise HTTPException(status_code=400, detail="Comment must be 5-500 chars and use letters, numbers, and basic punctuation")
-  return cleaned
+  # Apply bad words filter
+  return _censor_bad_words(cleaned)
 
 def _user_has_ordered_product(orders_collection, user_id: str, product_id: str) -> bool:
   """Check if user has ordered and received (delivered/shipped) a product."""

@@ -781,6 +781,13 @@ export async function deleteComment(commentId: string): Promise<{ status: string
   return response.data
 }
 
+export async function editComment(commentId: string, text: string): Promise<{ status: string; comment: CommunityComment }> {
+  const formData = new FormData()
+  formData.append('text', text)
+  const response = await api.put<{ status: string; comment: CommunityComment }>(`/community/comments/${commentId}`, formData)
+  return response.data
+}
+
 // --- Admin Users Management ---
 export interface AdminUser {
   id: string

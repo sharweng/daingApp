@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,11 @@ import {
   TextInput,
   FlatList,
   Dimensions,
-  SafeAreaView,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../contexts/AuthContext";
 import { API_BASE_URL } from "../../constants/config";
@@ -18,6 +21,8 @@ import {
   getCommunityPost,
   toggleLikePost,
   addComment,
+  deleteComment,
+  editComment,
 } from "../../services/api";
 import type { CommunityPost, CommunityComment, Screen } from "../../types";
 import { ecommerceStyles as styles } from "../../styles/ecommerce";
@@ -35,6 +40,7 @@ export const CommunityPostDetailScreen: React.FC<
   CommunityPostDetailScreenProps
 > = ({ postId, onNavigate, onBack }) => {
   const { isAuthenticated, user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +48,11 @@ export const CommunityPostDetailScreen: React.FC<
   const [newComment, setNewComment] = useState("");
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [liking, setLiking] = useState(false);
+  // Edit comment states
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPostDetails();
@@ -124,6 +135,79 @@ export const CommunityPostDetailScreen: React.FC<
     }
   };
 
+  const handleEditComment = (comment: CommunityComment) => {
+    setEditingCommentId(comment.id);
+    setEditCommentText(comment.text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditCommentText("");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingCommentId || !editCommentText.trim()) return;
+
+    setSavingEdit(true);
+    try {
+      const result = await editComment(
+        API_BASE_URL,
+        editingCommentId,
+        editCommentText.trim(),
+      );
+
+      if (result.success && result.comment) {
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === editingCommentId ? { ...c, text: result.comment!.text } : c
+          )
+        );
+        handleCancelEdit();
+      } else {
+        Alert.alert("Error", "Failed to update comment. Please try again.");
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteComment = (comment: CommunityComment) => {
+    Alert.alert(
+      "Delete Comment",
+      "Are you sure you want to delete this comment?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeletingCommentId(comment.id);
+            try {
+              const result = await deleteComment(API_BASE_URL, comment.id);
+              if (result.success) {
+                setComments((prev) => prev.filter((c) => c.id !== comment.id));
+                // Update comment count
+                if (post) {
+                  setPost((prev) => {
+                    if (!prev) return null;
+                    return {
+                      ...prev,
+                      comments_count: Math.max(0, prev.comments_count - 1),
+                    };
+                  });
+                }
+              } else {
+                Alert.alert("Error", "Failed to delete comment. Please try again.");
+              }
+            } finally {
+              setDeletingCommentId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
@@ -146,70 +230,54 @@ export const CommunityPostDetailScreen: React.FC<
 
   if (loading) {
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.background,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3498db" />
+      </View>
     );
   }
 
   if (!post) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <Ionicons
-              name="chevron-back"
-              size={24}
-              color={theme.colors.text}
-            />
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Post Not Found</Text>
-          <View style={{ width: 40 }} />
+          <View style={{ width: 24 }} />
         </View>
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-            paddingHorizontal: 16,
-          }}
-        >
-          <Text style={{ color: theme.colors.textSecondary, textAlign: "center" }}>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color="#ccc" />
+          <Text style={styles.emptyText}>
             The post could not be loaded. Please try again.
           </Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   const isLiked = user ? post.liked_by.includes(user.id) : false;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Ionicons
-            name="chevron-back"
-            size={24}
-            color={theme.colors.text}
-          />
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Community Post</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView
-        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        style={styles.scrollContainer}
         contentContainerStyle={{ paddingBottom: 16 }}
         showsVerticalScrollIndicator={true}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Image Carousel */}
         {post.images.length > 0 ? (
@@ -442,84 +510,188 @@ export const CommunityPostDetailScreen: React.FC<
               data={comments}
               keyExtractor={(item) => item.id}
               scrollEnabled={false}
-              renderItem={({ item: comment }) => (
-                <View
-                  style={{
-                    marginBottom: 12,
-                    paddingBottom: 12,
-                    borderBottomWidth: 1,
-                    borderBottomColor: theme.colors.border,
-                  }}
-                >
+              renderItem={({ item: comment }) => {
+                const isOwnComment = user?.id === comment.author_id;
+                const isEditing = editingCommentId === comment.id;
+                const isDeleting = deletingCommentId === comment.id;
+
+                return (
                   <View
                     style={{
-                      flexDirection: "row",
-                      alignItems: "flex-start",
-                      gap: 8,
+                      marginBottom: 12,
+                      paddingBottom: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: theme.colors.border,
                     }}
                   >
                     <View
                       style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        backgroundColor: "#1E293B",
-                        justifyContent: "center",
-                        alignItems: "center",
+                        flexDirection: "row",
+                        alignItems: "flex-start",
+                        gap: 8,
                       }}
                     >
-                      <Text
-                        style={{
-                          color: theme.colors.textSecondary,
-                          fontWeight: "600",
-                          fontSize: 12,
-                        }}
-                      >
-                        {comment.author_name.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
                       <View
                         style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
                           backgroundColor: "#1E293B",
-                          padding: 12,
-                          borderRadius: 8,
-                          marginBottom: 6,
+                          justifyContent: "center",
+                          alignItems: "center",
                         }}
                       >
                         <Text
                           style={{
-                            color: theme.colors.text,
+                            color: theme.colors.textSecondary,
                             fontWeight: "600",
                             fontSize: 12,
-                            marginBottom: 4,
                           }}
                         >
-                          {comment.author_name}
-                        </Text>
-                        <Text
-                          style={{
-                            color: theme.colors.text,
-                            fontSize: 13,
-                            lineHeight: 18,
-                          }}
-                        >
-                          {comment.text}
+                          {comment.author_name.charAt(0).toUpperCase()}
                         </Text>
                       </View>
-                      <Text
-                        style={{
-                          color: theme.colors.textSecondary,
-                          fontSize: 11,
-                          marginLeft: 4,
-                        }}
-                      >
-                        {formatDate(comment.created_at)}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <View
+                          style={{
+                            backgroundColor: "#1E293B",
+                            padding: 12,
+                            borderRadius: 8,
+                            marginBottom: 6,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: theme.colors.text,
+                                fontWeight: "600",
+                                fontSize: 12,
+                              }}
+                            >
+                              {comment.author_name}
+                            </Text>
+                            {isOwnComment && !isEditing && (
+                              <View style={{ flexDirection: "row", gap: 8 }}>
+                                <TouchableOpacity
+                                  onPress={() => handleEditComment(comment)}
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                >
+                                  <Ionicons
+                                    name="pencil-outline"
+                                    size={14}
+                                    color={theme.colors.textSecondary}
+                                  />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => handleDeleteComment(comment)}
+                                  disabled={isDeleting}
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                >
+                                  {isDeleting ? (
+                                    <ActivityIndicator size="small" color="#ef4444" />
+                                  ) : (
+                                    <Ionicons
+                                      name="trash-outline"
+                                      size={14}
+                                      color="#ef4444"
+                                    />
+                                  )}
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                          {isEditing ? (
+                            <View>
+                              <TextInput
+                                style={{
+                                  color: theme.colors.text,
+                                  fontSize: 13,
+                                  lineHeight: 18,
+                                  backgroundColor: theme.colors.backgroundLight,
+                                  borderRadius: 6,
+                                  padding: 8,
+                                  borderWidth: 1,
+                                  borderColor: theme.colors.border,
+                                  minHeight: 60,
+                                }}
+                                value={editCommentText}
+                                onChangeText={setEditCommentText}
+                                multiline
+                                autoFocus
+                                editable={!savingEdit}
+                              />
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  justifyContent: "flex-end",
+                                  gap: 8,
+                                  marginTop: 8,
+                                }}
+                              >
+                                <TouchableOpacity
+                                  onPress={handleCancelEdit}
+                                  disabled={savingEdit}
+                                  style={{
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 6,
+                                    backgroundColor: "#475569",
+                                    borderRadius: 4,
+                                  }}
+                                >
+                                  <Text style={{ color: "white", fontSize: 12 }}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={handleSaveEdit}
+                                  disabled={savingEdit || !editCommentText.trim()}
+                                  style={{
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 6,
+                                    backgroundColor: theme.colors.primary,
+                                    borderRadius: 4,
+                                    opacity: savingEdit || !editCommentText.trim() ? 0.5 : 1,
+                                  }}
+                                >
+                                  {savingEdit ? (
+                                    <ActivityIndicator size="small" color="white" />
+                                  ) : (
+                                    <Text style={{ color: "white", fontSize: 12 }}>Save</Text>
+                                  )}
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          ) : (
+                            <Text
+                              style={{
+                                color: theme.colors.text,
+                                fontSize: 13,
+                                lineHeight: 18,
+                              }}
+                            >
+                              {comment.text}
+                            </Text>
+                          )}
+                        </View>
+                        <Text
+                          style={{
+                            color: theme.colors.textSecondary,
+                            fontSize: 11,
+                            marginLeft: 4,
+                          }}
+                        >
+                          {formatDate(comment.created_at)}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              )}
+                );
+              }}
             />
           )}
         </View>
@@ -529,14 +701,15 @@ export const CommunityPostDetailScreen: React.FC<
       <View
         style={{
           paddingHorizontal: 16,
-          paddingVertical: 12,
+          paddingTop: 12,
+          paddingBottom: Math.max(12, insets.bottom),
           backgroundColor: "#1E293B",
           borderTopWidth: 1,
           borderTopColor: theme.colors.border,
         }}
       >
         {isAuthenticated ? (
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
             <View
               style={{
                 flex: 1,
@@ -545,8 +718,7 @@ export const CommunityPostDetailScreen: React.FC<
                 borderWidth: 1,
                 borderColor: theme.colors.border,
                 paddingHorizontal: 12,
-                paddingVertical: 8,
-                minHeight: 40,
+                height: 44,
                 justifyContent: "center",
               }}
             >
@@ -554,13 +726,12 @@ export const CommunityPostDetailScreen: React.FC<
                 style={{
                   color: theme.colors.text,
                   fontSize: 14,
-                  maxHeight: 100,
+                  flex: 1,
                 }}
                 placeholder="Write a comment..."
                 placeholderTextColor={theme.colors.textSecondary}
                 value={newComment}
                 onChangeText={setNewComment}
-                multiline
                 editable={!addingComment}
               />
             </View>
@@ -568,10 +739,10 @@ export const CommunityPostDetailScreen: React.FC<
               onPress={handleAddComment}
               disabled={addingComment || !newComment.trim()}
               style={{
-                paddingHorizontal: 12,
-                paddingVertical: 10,
+                width: 44,
+                height: 44,
                 backgroundColor: theme.colors.primary,
-                borderRadius: 6,
+                borderRadius: 8,
                 justifyContent: "center",
                 alignItems: "center",
                 opacity: addingComment || !newComment.trim() ? 0.5 : 1,
@@ -601,6 +772,6 @@ export const CommunityPostDetailScreen: React.FC<
           </TouchableOpacity>
         )}
       </View>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 };

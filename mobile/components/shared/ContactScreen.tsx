@@ -104,7 +104,11 @@ const ContactScreen: React.FC<ContactScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior="padding"
+      keyboardVerticalOffset={0}
+    >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -114,29 +118,26 @@ const ContactScreen: React.FC<ContactScreenProps> = ({
         <View style={{ width: theme.header.backButtonSize }} />
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Contact Info Card */}
-          <View style={styles.infoCard}>
-            <Ionicons name="mail" size={32} color={theme.colors.primary} />
-            <Text style={styles.infoTitle}>Get in Touch</Text>
-            <Text style={styles.infoEmail}>shathesisgroup@gmail.com</Text>
-            <Text style={styles.infoDescription}>
-              Have questions or feedback? Send us a message and we'll respond as
-              soon as possible.
-            </Text>
-          </View>
+        {/* Contact Info Card */}
+        <View style={styles.infoCard}>
+          <Ionicons name="mail" size={32} color={theme.colors.primary} />
+          <Text style={styles.infoTitle}>Get in Touch</Text>
+          <Text style={styles.infoEmail}>shathesisgroup@gmail.com</Text>
+          <Text style={styles.infoDescription}>
+            Have questions or feedback? Send us a message and we'll respond as
+            soon as possible.
+          </Text>
+        </View>
 
-          {/* Form Card */}
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Send a Message</Text>
+        {/* Form Card */}
+        <View style={styles.formCard}>
+          <Text style={styles.formTitle}>Send a Message</Text>
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Name *</Text>
@@ -221,8 +222,7 @@ const ContactScreen: React.FC<ContactScreenProps> = ({
 
           <View style={{ height: 32 }} />
         </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 

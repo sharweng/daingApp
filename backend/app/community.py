@@ -7,11 +7,19 @@ from typing import Optional, List
 import re
 import cloudinary
 import cloudinary.uploader
+from better_profanity import profanity
 
 from app.config import get_db
 from app.auth import get_current_user_web, require_admin_user
 
 router = APIRouter(tags=["community"])
+
+# Initialize profanity filter with custom Filipino words
+CUSTOM_BAD_WORDS = [
+    "puta", "gago", "tangina", "bobo", "tanga", "putangina", "leche", "tarantado",
+    "ulol", "inutil", "hayop", "pakyu", "kupal"
+]
+profanity.add_censor_words(CUSTOM_BAD_WORDS)
 
 
 # --- Helper Functions ---
@@ -40,23 +48,11 @@ def _get_users_collection():
         return None
 
 
-# Bad words filter - censors explicit words with asterisks
-BAD_WORDS = [
-    "fuck", "shit", "ass", "bitch", "damn", "crap", "bastard", "dick", "pussy",
-    "cock", "whore", "slut", "fag", "nigger", "nigga", "retard", "idiot", "stupid",
-    "puta", "gago", "tangina", "bobo", "tanga", "putangina", "leche", "tarantado"
-]
-
-
 def _censor_bad_words(text: str) -> str:
-    """Replace bad words with asterisks."""
+    """Replace bad words with asterisks using better-profanity."""
     if not text:
         return text
-    result = text
-    for word in BAD_WORDS:
-        pattern = re.compile(re.escape(word), re.IGNORECASE)
-        result = pattern.sub("*" * len(word), result)
-    return result
+    return profanity.censor(text)
 
 
 def _normalize_community_post(doc):
@@ -97,6 +93,7 @@ def get_community_posts(page: int = 1, page_size: int = 12, category: str = "All
     page_size = min(max(page_size, 1), 50)
 
     collection = _get_community_collection()
+    comments_collection = _get_comments_collection()
     if collection is None:
         return {"status": "error", "message": "Database not available"}
 
@@ -118,8 +115,19 @@ def get_community_posts(page: int = 1, page_size: int = 12, category: str = "All
 
     posts = []
     for doc in cursor:
+        post_id = str(doc["_id"])
+        # Calculate actual comment count (exclude deleted/disabled)
+        actual_comment_count = 0
+        if comments_collection is not None:
+            actual_comment_count = comments_collection.count_documents({
+                "post_id": post_id,
+                "$and": [
+                    {"$or": [{"is_deleted": {"$ne": True}}, {"is_deleted": {"$exists": False}}]},
+                    {"$or": [{"is_disabled": {"$ne": True}}, {"is_disabled": {"$exists": False}}]}
+                ]
+            })
         posts.append({
-            "id": str(doc["_id"]),
+            "id": post_id,
             "title": doc.get("title", ""),
             "description": doc.get("description", ""),
             "images": doc.get("images", []),
@@ -129,7 +137,7 @@ def get_community_posts(page: int = 1, page_size: int = 12, category: str = "All
             "author_avatar": doc.get("author_avatar", ""),
             "likes": doc.get("likes", 0),
             "liked_by": doc.get("liked_by", []),
-            "comments_count": doc.get("comments_count", 0),
+            "comments_count": actual_comment_count,
             "shares": doc.get("shares", 0),
             "created_at": doc.get("created_at", ""),
         })
@@ -555,8 +563,9 @@ def add_comment(post_id: str, text: str = Form(...), user=Depends(get_current_us
 def delete_comment(comment_id: str, user=Depends(get_current_user_web)):
     """Soft delete own comment or admin can delete any - marks as deleted instead of removing."""
     comments_collection = _get_comments_collection()
+    collection = _get_community_collection()
 
-    if comments_collection is None:
+    if comments_collection is None or collection is None:
         raise HTTPException(status_code=500, detail="Database not available")
 
     try:
@@ -581,7 +590,66 @@ def delete_comment(comment_id: str, user=Depends(get_current_user_web)):
         "deleted_at": now,
     }})
 
+    # Decrement comments count on the post
+    post_id = comment.get("post_id")
+    if post_id:
+        try:
+            post_oid = ObjectId(post_id)
+            collection.update_one({"_id": post_oid}, {"$inc": {"comments_count": -1}})
+        except:
+            pass  # Ignore if post_id is invalid
+
     return {"status": "success", "message": "Comment deleted"}
+
+
+@router.put("/community/comments/{comment_id}")
+@router.patch("/community/comments/{comment_id}")
+def edit_comment(comment_id: str, text: str = Form(...), user=Depends(get_current_user_web)):
+    """Edit own comment - only the comment owner can edit. Supports both PUT and PATCH."""
+    comments_collection = _get_comments_collection()
+
+    if comments_collection is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    try:
+        oid = ObjectId(comment_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid comment ID")
+
+    comment = comments_collection.find_one({"_id": oid})
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    user_id = str(user.get("_id", user.get("id", "")))
+
+    # Only owner can edit
+    if comment.get("author_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this comment")
+
+    # Censor bad words
+    censored_text = _censor_bad_words(text.strip())
+
+    comments_collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            "text": censored_text,
+            "updated_at": datetime.now().isoformat(),
+        }}
+    )
+
+    updated = comments_collection.find_one({"_id": oid})
+    return {
+        "status": "success",
+        "comment": {
+            "id": str(updated["_id"]),
+            "post_id": updated.get("post_id", ""),
+            "author_id": updated.get("author_id", ""),
+            "author_name": updated.get("author_name", "Anonymous"),
+            "text": updated.get("text", ""),
+            "created_at": updated.get("created_at", ""),
+            "updated_at": updated.get("updated_at", ""),
+        }
+    }
 
 
 @router.get("/community/stats")

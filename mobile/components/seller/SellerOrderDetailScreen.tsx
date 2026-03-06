@@ -103,7 +103,7 @@ export default function SellerOrderDetailScreen({
       <View style={ecommerceStyles.container}>
         <View style={ecommerceStyles.header}>
           <TouchableOpacity onPress={onBack}>
-            <Ionicons name="arrow-back" size={24} color="#1E293B" />
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={ecommerceStyles.headerTitle}>Order Not Found</Text>
           <View style={{ width: 24 }} />
@@ -119,7 +119,7 @@ export default function SellerOrderDetailScreen({
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
         <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#1E293B" />
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>
           Order #{order.orderNumber}
