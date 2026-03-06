@@ -57,6 +57,7 @@ import AdminScansScreen from "../components/admin/AdminScansScreen";
 import AdminAuditLogsScreen from "../components/admin/AdminAuditLogsScreen";
 // Community screens
 import CommunityScreen from "../components/community/CommunityScreen";
+import CommunityCreateScreen from "../components/community/CommunityCreateScreen";
 import { CommunityPostDetailScreen } from "../components/community/CommunityPostDetailScreen";
 import { takePicture } from "../utils/camera";
 import { analyzeFish, fetchHistory } from "../services/api";
@@ -582,6 +583,10 @@ export default function Index() {
         onBack={goBack}
       />
     );
+  }
+
+  if (currentScreen === "communityCreate") {
+    return <CommunityCreateScreen onNavigate={navigate} onBack={goBack} />;
   }
 
   // ============================================

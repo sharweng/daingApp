@@ -19,6 +19,7 @@ import {
   updateVoucher,
   deleteVoucher,
 } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -51,7 +52,7 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
   const loadVouchers = async () => {
     try {
       setLoading(true);
-      const data = await listVouchers();
+      const data = await listVouchers(API_BASE_URL);
       setVouchers(data);
     } catch (err) {
       console.error("Failed to load vouchers:", err);
@@ -94,22 +95,21 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
       setSaving(true);
       const data = {
         code: form.code.trim().toUpperCase(),
-        description: form.description.trim(),
-        discountType: form.discountType,
-        discountValue: parseFloat(form.discountValue),
-        minPurchase: form.minPurchase
+        discount_type: form.discountType,
+        value: parseFloat(form.discountValue),
+        min_order_amount: form.minPurchase
           ? parseFloat(form.minPurchase)
-          : undefined,
-        maxUses: form.maxUses ? parseInt(form.maxUses) : undefined,
-        expiresAt: form.expiresAt || undefined,
-        isActive: form.isActive,
+          : null,
+        max_uses: form.maxUses ? parseInt(form.maxUses) : null,
+        expiration_date: form.expiresAt || null,
+        active: form.isActive,
       };
 
       if (editing) {
-        await updateVoucher(editing.id, data);
+        await updateVoucher(API_BASE_URL, editing.id, data);
         Alert.alert("Success", "Voucher updated");
       } else {
-        await createVoucher(data);
+        await createVoucher(API_BASE_URL, data);
         Alert.alert("Success", "Voucher created");
       }
       setModalVisible(false);
@@ -132,7 +132,7 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
           style: "destructive",
           onPress: async () => {
             try {
-              await deleteVoucher(voucher.id);
+              await deleteVoucher(API_BASE_URL, voucher.id);
               await loadVouchers();
               Alert.alert("Success", "Voucher deleted");
             } catch (err) {

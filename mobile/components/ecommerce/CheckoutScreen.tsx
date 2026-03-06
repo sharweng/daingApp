@@ -143,9 +143,19 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
 
     setSubmitting(true);
     try {
-      const result = await createOrder(API_BASE_URL, address, paymentMethod);
+      const result = await createOrder(
+        API_BASE_URL, 
+        address, 
+        paymentMethod, 
+        undefined, 
+        voucher?.voucher_id
+      );
       if (result.success && result.orders.length > 0) {
-        onNavigate("orderSuccess", { orders: result.orders });
+        const firstOrder = result.orders[0];
+        onNavigate("orderSuccess", { 
+          orderId: firstOrder.id, 
+          orderNumber: firstOrder.orderNumber 
+        });
       } else {
         Alert.alert("Error", result.message || "Failed to place order");
       }

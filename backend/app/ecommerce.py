@@ -263,6 +263,7 @@ class OrderCreateBody(BaseModel):
     address: OrderAddressBody
     payment_method: str
     seller_id: Optional[str] = None
+    voucher_id: Optional[str] = None
 
 
 class CategoryCreateBody(BaseModel):
@@ -740,6 +741,7 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
     cart_collection = _get_cart_collection()
     orders_collection = _get_orders_collection()
     products_collection = _get_products_collection()
+    vouchers_collection = _get_vouchers_collection()
     if cart_collection is None or orders_collection is None or products_collection is None:
         raise HTTPException(status_code=500, detail="Database not configured")
 
@@ -747,6 +749,31 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
     cart_doc = cart_collection.find_one({"user_id": user_id})
     if not cart_doc or not cart_doc.get("items"):
         raise HTTPException(status_code=400, detail="Cart is empty")
+
+    # Validate voucher if provided
+    voucher = None
+    voucher_discount = 0.0
+    voucher_discount_type = None
+    if body.voucher_id and vouchers_collection:
+        try:
+            voucher = vouchers_collection.find_one({"_id": ObjectId(body.voucher_id), "active": True})
+            if voucher:
+                # Check expiration
+                if voucher.get("expiration_date") and voucher["expiration_date"] <= datetime.utcnow():
+                    voucher = None
+                # Check max uses
+                elif voucher.get("max_uses") and voucher.get("current_uses", 0) >= voucher["max_uses"]:
+                    voucher = None
+                # Check per user limit
+                elif voucher.get("per_user_limit"):
+                    user_usage = next(
+                        (u["used_count"] for u in voucher.get("used_by", []) if u["user_id"] == user_id),
+                        0
+                    )
+                    if user_usage >= voucher["per_user_limit"]:
+                        voucher = None
+        except:
+            voucher = None
 
     seller_filter = (body.seller_id or "").strip()
     product_ids = []
@@ -806,6 +833,21 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
     now = datetime.utcnow().isoformat()
     created_orders: List[Dict[str, Any]] = []
 
+    # Calculate total across all seller groups for voucher application
+    grand_total = sum(group.get("total", 0) for group in seller_groups.values())
+    
+    # Calculate voucher discount if voucher is valid
+    if voucher:
+        # Check minimum order amount
+        if voucher.get("min_order_amount") and grand_total < voucher["min_order_amount"]:
+            voucher = None  # Don't apply voucher if minimum not met
+        else:
+            voucher_discount_type = voucher.get("discount_type", "fixed")
+            if voucher_discount_type == "percentage":
+                voucher_discount = grand_total * (voucher.get("value", 0) / 100)
+            else:
+                voucher_discount = voucher.get("value", 0)
+
     for seller_id, group in seller_groups.items():
         order_number = f"ORD-{datetime.utcnow().strftime('%y%m%d')}-{str(ObjectId())[-6:].upper()}"
         
@@ -818,25 +860,59 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
             payment_status = "pending"
             paid_at = None
         
+        # Distribute voucher discount proportionally across seller orders
+        order_subtotal = float(group.get("total", 0))
+        order_voucher_discount = 0.0
+        if voucher and grand_total > 0:
+            # Proportional discount based on this order's share of grand total
+            order_voucher_discount = (order_subtotal / grand_total) * voucher_discount
+        
         order_doc = {
             "user_id": user_id,
             "seller_id": group.get("seller_id", ""),
             "seller_name": group.get("seller_name", ""),
             "order_number": order_number,
             "status": order_status,
-            "total": float(group.get("total", 0)),
+            "subtotal": order_subtotal,
+            "discount": order_voucher_discount,
+            "total": max(0, order_subtotal - order_voucher_discount),
             "total_items": int(group.get("total_items", 0)),
             "payment_method": body.payment_method,
             "payment_status": payment_status,
             "paid_at": paid_at,
             "address": body.address.dict(),
             "items": group.get("items", []),
+            "voucher_id": str(voucher["_id"]) if voucher else None,
+            "voucher_code": voucher.get("code") if voucher else None,
             "created_at": now,
             "updated_at": now,
         }
         result = orders_collection.insert_one(order_doc)
         order_doc["_id"] = result.inserted_id
         created_orders.append(order_doc)
+
+    # Update voucher usage if used
+    if voucher and vouchers_collection:
+        try:
+            # Update current_uses
+            vouchers_collection.update_one(
+                {"_id": voucher["_id"]},
+                {
+                    "$inc": {"current_uses": 1},
+                    "$push": {
+                        "used_by": {
+                            "$each": [{"user_id": user_id, "used_count": 1, "used_at": now}]
+                        }
+                    }
+                }
+            )
+            # Also update if user already in used_by
+            vouchers_collection.update_one(
+                {"_id": voucher["_id"], "used_by.user_id": user_id},
+                {"$inc": {"used_by.$.used_count": 1}}
+            )
+        except:
+            pass
 
     # Clear cart after successful order
     if seller_filter:

@@ -52,3 +52,5 @@ export { default as AdminAuditLogsScreen } from "./admin/AdminAuditLogsScreen";
 
 // Community screens
 export { default as CommunityScreen } from "./community/CommunityScreen";
+export { default as CommunityCreateScreen } from "./community/CommunityCreateScreen";
+export { default as CommunityCreateScreen } from "./community/CommunityCreateScreen";

@@ -1134,6 +1134,7 @@ export const createOrder = async (
   address: OrderAddress,
   paymentMethod: string,
   sellerId?: string,
+  voucherId?: string,
 ): Promise<{ success: boolean; orders: OrderDetail[]; message?: string }> => {
   try {
     const response = await axios.post(
@@ -1142,6 +1143,7 @@ export const createOrder = async (
         address,
         payment_method: paymentMethod,
         seller_id: sellerId,
+        voucher_id: voucherId,
       },
       {
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
