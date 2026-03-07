@@ -41,6 +41,7 @@ interface AuthContextType extends AuthState {
   ) => Promise<AuthResponse>;
   logout: (baseUrl: string) => Promise<void>;
   restoreSession: (baseUrl: string) => Promise<void>;
+  refreshUser: (baseUrl: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -278,6 +279,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     [clearAuthData],
   );
 
+  // Refresh user data from backend (after profile update, avatar upload, etc.)
+  const refreshUser = useCallback(
+    async (baseUrl: string) => {
+      try {
+        const response = await getCurrentUser(baseUrl);
+        if (response.status === "success" && response.user) {
+          const token = state.token;
+          if (token) {
+            await saveAuthData(response.user, token);
+          }
+          setState((prev) => ({
+            ...prev,
+            user: response.user || null,
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to refresh user:", error);
+      }
+    },
+    [state.token, saveAuthData],
+  );
+
   const value: AuthContextType = {
     ...state,
     login,
@@ -285,6 +308,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     googleLogin,
     logout,
     restoreSession,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

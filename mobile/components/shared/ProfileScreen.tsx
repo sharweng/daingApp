@@ -42,7 +42,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onNavigate,
   onBack,
 }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -132,7 +132,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
       // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -151,6 +151,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({
       );
       if (uploadResult.success && uploadResult.avatar_url) {
         setAvatarUrl(uploadResult.avatar_url);
+        // Refresh user in AuthContext so avatar shows in header/settings
+        await refreshUser(API_BASE_URL);
         Alert.alert("Success", "Profile picture updated successfully");
       } else {
         Alert.alert(
@@ -189,6 +191,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({
       const result = await updateUserProfile(API_BASE_URL, updateData);
       if (result.success && result.profile) {
         setProfile(result.profile);
+        // Refresh user in AuthContext so changes are reflected everywhere
+        await refreshUser(API_BASE_URL);
         Alert.alert("Success", "Profile updated successfully");
       } else {
         Alert.alert("Error", result.error || "Failed to update profile");

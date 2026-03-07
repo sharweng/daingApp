@@ -27,6 +27,7 @@ import {
 import type { CommunityPost, CommunityComment, Screen } from "../../types";
 import { ecommerceStyles as styles } from "../../styles/ecommerce";
 import { theme } from "../../styles/theme";
+import { ImageGalleryModal } from "../shared/ImageGalleryModal";
 
 const { width } = Dimensions.get("window");
 
@@ -47,6 +48,7 @@ export const CommunityPostDetailScreen: React.FC<
   const [addingComment, setAddingComment] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [galleryVisible, setGalleryVisible] = useState(false);
   const [liking, setLiking] = useState(false);
   // Edit comment states
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -282,15 +284,33 @@ export const CommunityPostDetailScreen: React.FC<
         {/* Image Carousel */}
         {post.images.length > 0 ? (
           <View style={{ backgroundColor: "#1E293B" }}>
-            <Image
-              source={{ uri: post.images[carouselIndex] }}
-              style={{
-                width: width,
-                height: 300,
-                backgroundColor: "#0F172A",
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => {
+                const index = Math.round(e.nativeEvent.contentOffset.x / width);
+                setCarouselIndex(index);
               }}
-              resizeMode="contain"
-            />
+            >
+              {post.images.map((imageUrl, index) => (
+                <TouchableOpacity
+                  key={index}
+                  activeOpacity={0.9}
+                  onPress={() => setGalleryVisible(true)}
+                >
+                  <Image
+                    source={{ uri: imageUrl }}
+                    style={{
+                      width: width,
+                      height: 300,
+                      backgroundColor: "#0F172A",
+                    }}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
             {/* Dot Navigation */}
             {post.images.length > 1 && (
@@ -772,6 +792,16 @@ export const CommunityPostDetailScreen: React.FC<
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Image Gallery Modal */}
+      {post && post.images.length > 0 && (
+        <ImageGalleryModal
+          visible={galleryVisible}
+          images={post.images.map((url) => ({ url }))}
+          initialIndex={carouselIndex}
+          onClose={() => setGalleryVisible(false)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 };

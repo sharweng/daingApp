@@ -113,7 +113,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
             # Check if user is inactive (need to get full user from DB)
             from bson import ObjectId
             db = get_db()
-            full_user = db["users"].find_one({"_id": ObjectId(session["user_id"])})
+            full_user = db["users"].find_one({"_id": ObjectId(auth_result["user_id"])})
             if full_user and full_user.get("status") == "inactive":
                 raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact support.")
             return {"status": "success", "user": user}
@@ -464,8 +464,9 @@ async def update_profile(body: ProfileUpdateBody, authorization: Optional[str] =
             from .auth import get_current_user_web
             from fastapi.security import HTTPAuthorizationCredentials
             creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-            user = await get_current_user_web.__wrapped__(creds)
-        except:
+            user = get_current_user_web.__wrapped__(creds)
+        except Exception as e:
+            print(f"❌ Profile update auth fallback failed: {e}")
             pass
     
     if not user:
@@ -554,8 +555,9 @@ async def upload_profile_avatar(file: UploadFile = File(...), authorization: Opt
             from .auth import get_current_user_web
             from fastapi.security import HTTPAuthorizationCredentials
             creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-            user = await get_current_user_web.__wrapped__(creds)
-        except:
+            user = get_current_user_web.__wrapped__(creds)
+        except Exception as e:
+            print(f"❌ Avatar upload auth fallback failed: {e}")
             pass
     
     if not user:

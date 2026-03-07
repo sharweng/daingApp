@@ -66,6 +66,7 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
+  avatar_url?: string;
   bio?: string;
   joined_at?: string;
 }

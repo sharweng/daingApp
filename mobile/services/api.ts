@@ -247,12 +247,14 @@ const extractErrorMessage = (error: any, fallback: string): string => {
 // Helper to map web backend user format to mobile User format
 const mapWebUserToMobileUser = (webUser: any) => {
   if (!webUser) return undefined;
+  const avatarUrl = webUser.avatar_url || webUser.avatar || null;
   return {
     id: webUser.id,
     username: webUser.name || webUser.username || "",
     email: webUser.email || "",
     role: webUser.role || "user",
-    avatar: webUser.avatar_url || webUser.avatar,
+    avatar: avatarUrl,
+    avatar_url: avatarUrl,
     bio: webUser.bio,
     joined_at: webUser.created_at || webUser.joined_at,
   };
@@ -1562,6 +1564,33 @@ export const deleteCommunityPost = async (
       timeout: 10000,
     });
     return { success: true };
+  } catch (error) {
+    return { success: false };
+  }
+};
+
+export const updateCommunityPost = async (
+  baseUrl: string,
+  postId: string,
+  title: string,
+  description: string,
+  category: string,
+): Promise<{ success: boolean; post?: any }> => {
+  try {
+    const formData = new FormData();
+    formData.append("title", title);
+    formData.append("description", description);
+    formData.append("category", category);
+
+    const response = await axios.put(
+      `${normalizeUrl(baseUrl)}/community/posts/${postId}`,
+      formData,
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "multipart/form-data" },
+        timeout: 10000,
+      },
+    );
+    return { success: true, post: response.data.post };
   } catch (error) {
     return { success: false };
   }

@@ -6,6 +6,7 @@ import {
   Alert,
   StyleSheet,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
@@ -59,6 +60,7 @@ import AdminAuditLogsScreen from "../components/admin/AdminAuditLogsScreen";
 import CommunityScreen from "../components/community/CommunityScreen";
 import CommunityCreateScreen from "../components/community/CommunityCreateScreen";
 import { CommunityPostDetailScreen } from "../components/community/CommunityPostDetailScreen";
+import MyPostsScreen from "../components/community/MyPostsScreen";
 import { takePicture } from "../utils/camera";
 import { analyzeFish, fetchHistory } from "../services/api";
 import { DEFAULT_SERVER_BASE_URL, getServerUrls } from "../constants/config";
@@ -403,9 +405,16 @@ export default function Index() {
               onPress={() => navigate("settings")}
             >
               {user ? (
-                <View style={styles.headerAvatar}>
-                  <Ionicons name="person" size={18} color="#fff" />
-                </View>
+                (user.avatar_url || user.avatar) ? (
+                  <Image
+                    source={{ uri: user.avatar_url || user.avatar }}
+                    style={styles.headerAvatar}
+                  />
+                ) : (
+                  <View style={[styles.headerAvatar, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="person" size={18} color="#fff" />
+                  </View>
+                )
               ) : (
                 <Ionicons
                   name="settings-outline"
@@ -587,6 +596,10 @@ export default function Index() {
 
   if (currentScreen === "communityCreate") {
     return <CommunityCreateScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "myPosts") {
+    return <MyPostsScreen onNavigate={navigate} onBack={goBack} />;
   }
 
   // ============================================

@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../styles/theme";
@@ -108,7 +109,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.7}
           >
             <View style={styles.avatarContainer}>
-              <Ionicons name="person" size={32} color="#fff" />
+              {(user.avatar_url || user.avatar) ? (
+                <Image
+                  source={{ uri: user.avatar_url || user.avatar }}
+                  style={{ width: 64, height: 64, borderRadius: 32 }}
+                />
+              ) : (
+                <Ionicons name="person" size={32} color="#fff" />
+              )}
             </View>
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{user.username}</Text>
@@ -172,6 +180,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 label="Wishlist"
                 subtitle="Products you've saved"
                 onPress={() => onNavigate("wishlist")}
+              />
+              <MenuItem
+                icon="document-text-outline"
+                label="My Community Posts"
+                subtitle="View and manage your posts"
+                onPress={() => onNavigate("myPosts")}
               />
             </View>
           </View>

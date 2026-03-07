@@ -82,23 +82,6 @@ export default function OrderSuccessScreen({
           width: "100%",
           alignItems: "center",
         }}
-        onPress={() => onNavigate("orderDetail", { orderId })}
-      >
-        <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
-          View Order Details
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={{
-          backgroundColor: "#334155",
-          borderRadius: 12,
-          paddingVertical: 16,
-          paddingHorizontal: 48,
-          marginBottom: 12,
-          width: "100%",
-          alignItems: "center",
-        }}
         onPress={() => onNavigate("userOrders")}
       >
         <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "600" }}>

@@ -422,9 +422,18 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         if user:
             return {
                 "id": str(user["_id"]),
-                "username": user["username"],
-                "email": user["email"],
-                "role": user.get("role", "user")
+                "username": user.get("username") or user.get("name") or user.get("email", "").split("@")[0],
+                "name": user.get("name") or "",
+                "full_name": user.get("full_name") or user.get("name") or "",
+                "email": user.get("email", ""),
+                "role": user.get("role", "user"),
+                "avatar_url": user.get("avatar_url"),
+                "phone": user.get("phone") or "",
+                "city": user.get("city") or "",
+                "street_address": user.get("street_address") or "",
+                "province": user.get("province") or "",
+                "postal_code": user.get("postal_code") or "",
+                "gender": user.get("gender") or "",
             }
         return None
     except Exception as e:
