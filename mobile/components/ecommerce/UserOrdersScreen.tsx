@@ -167,7 +167,7 @@ export const UserOrdersScreen: React.FC<UserOrdersScreenProps> = ({
           <Ionicons name="receipt-outline" size={64} color="#ccc" />
           <Text style={styles.emptyText}>Please login to view your orders</Text>
           <TouchableOpacity
-            style={[styles.primaryButton, { marginTop: 16 }]}
+            style={[styles.primaryButton, { marginTop: 16, maxWidth: 200, alignSelf: "center" }]}
             onPress={() => onNavigate("login")}
           >
             <Text style={styles.primaryButtonText}>Login</Text>
@@ -200,7 +200,7 @@ export const UserOrdersScreen: React.FC<UserOrdersScreenProps> = ({
             Start shopping to place your first order
           </Text>
           <TouchableOpacity
-            style={[styles.primaryButton, { marginTop: 16 }]}
+            style={[styles.primaryButton, { marginTop: 16, maxWidth: 200, alignSelf: "center" }]}
             onPress={() => onNavigate("home", { defaultTab: "market" })}
           >
             <Text style={styles.primaryButtonText}>Browse Products</Text>

@@ -198,30 +198,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <View style={styles.menuCard}>
               <MenuItem
                 icon="speedometer-outline"
-                label="Dashboard"
-                subtitle="View your seller analytics"
+                label="Seller Dashboard"
+                subtitle="Manage your products, orders, and more"
                 onPress={() => onNavigate("sellerDashboard")}
-                color="#10B981"
-              />
-              <MenuItem
-                icon="cube-outline"
-                label="My Products"
-                subtitle="Manage your product listings"
-                onPress={() => onNavigate("sellerProducts")}
-                color="#10B981"
-              />
-              <MenuItem
-                icon="receipt-outline"
-                label="Orders"
-                subtitle="Manage customer orders"
-                onPress={() => onNavigate("sellerOrders")}
-                color="#10B981"
-              />
-              <MenuItem
-                icon="star-outline"
-                label="Reviews"
-                subtitle="View customer feedback"
-                onPress={() => onNavigate("sellerReviews")}
                 color="#10B981"
               />
             </View>

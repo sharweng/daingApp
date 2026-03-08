@@ -228,14 +228,53 @@ export const SellerDashboardScreen: React.FC<SellerDashboardScreenProps> = ({
                     Add Product
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { flex: 1 }]}
-                  onPress={() => onNavigate("sellerProducts")}
-                >
-                  <Text style={styles.secondaryButtonText}>
-                    View All Products
-                  </Text>
-                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Manage Menu */}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={styles.sectionTitle}>Manage</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                {[
+                  { id: "sellerProducts", icon: "cube", label: "Products", color: "#3B82F6", desc: "Manage listings" },
+                  { id: "sellerOrders", icon: "receipt", label: "Orders", color: "#10B981", desc: "Customer orders" },
+                  { id: "sellerReviews", icon: "star", label: "Reviews", color: "#F59E0B", desc: "Customer feedback" },
+                  { id: "sellerVouchers", icon: "pricetag", label: "Vouchers", color: "#EF4444", desc: "Store discounts" },
+                ].map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={{
+                      width: "47%",
+                      backgroundColor: "#1E293B",
+                      borderRadius: 12,
+                      padding: 16,
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.05,
+                      shadowRadius: 2,
+                      elevation: 1,
+                    }}
+                    onPress={() => onNavigate(item.id as Screen)}
+                  >
+                    <View
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: item.color + "20",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <Ionicons name={item.icon as any} size={20} color={item.color} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
+                      {item.label}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#94A3B8" }}>{item.desc}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
 
@@ -326,7 +365,7 @@ export const SellerDashboardScreen: React.FC<SellerDashboardScreenProps> = ({
                       { borderRadius: 8, marginBottom: 8 },
                     ]}
                     onPress={() =>
-                      onNavigate("sellerProductEdit", { productId: product.id })
+                      onNavigate("productDetail", { productId: product.id })
                     }
                   >
                     <View style={styles.listItemContent}>

@@ -125,6 +125,7 @@ def _normalize_product(doc: dict) -> dict:
         "category_name": doc.get("category_name", ""),
         "stock_qty": doc.get("stock_qty", 0),
         "status": doc.get("status", "available"),
+        "grade": doc.get("grade", "export"),
         "images": doc.get("images", []),
         "main_image_index": doc.get("main_image_index", 0),
         "is_disabled": doc.get("is_disabled", False),
@@ -283,6 +284,7 @@ class ProductCreateBody(BaseModel):
     category_id: Optional[str] = None
     stock_qty: int = 0
     status: str = "available"
+    grade: str = "export"
 
 
 class ProductUpdateBody(BaseModel):
@@ -292,6 +294,7 @@ class ProductUpdateBody(BaseModel):
     category_id: Optional[str] = None
     stock_qty: Optional[int] = None
     status: Optional[str] = None
+    grade: Optional[str] = None
     main_image_index: Optional[int] = None
 
 
@@ -754,6 +757,7 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
     voucher = None
     voucher_discount = 0.0
     voucher_discount_type = None
+    voucher_seller_id = None  # Track if this is a seller-specific voucher
     if body.voucher_id and vouchers_collection is not None:
         try:
             voucher = vouchers_collection.find_one({"_id": ObjectId(body.voucher_id), "active": True})
@@ -772,6 +776,9 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
                     )
                     if user_usage >= voucher["per_user_limit"]:
                         voucher = None
+                # Track seller_id for seller-specific vouchers
+                if voucher:
+                    voucher_seller_id = str(voucher.get("seller_id", "")) if voucher.get("seller_id") else None
         except:
             voucher = None
 
@@ -834,19 +841,29 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
     created_orders: List[Dict[str, Any]] = []
 
     # Calculate total across all seller groups for voucher application
+    # If this is a seller voucher, only count items from that seller
+    if voucher_seller_id:
+        # Seller voucher - only apply to that seller's items
+        applicable_total = seller_groups.get(voucher_seller_id, {}).get("total", 0)
+    else:
+        # Admin/global voucher - apply to all items
+        applicable_total = sum(group.get("total", 0) for group in seller_groups.values())
+    
+    # For grand_total, always use all items (used for proportional distribution)
     grand_total = sum(group.get("total", 0) for group in seller_groups.values())
     
     # Calculate voucher discount if voucher is valid
     if voucher:
-        # Check minimum order amount
-        if voucher.get("min_order_amount") and grand_total < voucher["min_order_amount"]:
+        # Check minimum order amount (against applicable total for seller vouchers)
+        check_total = applicable_total if voucher_seller_id else grand_total
+        if voucher.get("min_order_amount") and check_total < voucher["min_order_amount"]:
             voucher = None  # Don't apply voucher if minimum not met
         else:
             voucher_discount_type = voucher.get("discount_type", "fixed")
             if voucher_discount_type == "percentage":
-                voucher_discount = grand_total * (voucher.get("value", 0) / 100)
+                voucher_discount = applicable_total * (voucher.get("value", 0) / 100)
             else:
-                voucher_discount = voucher.get("value", 0)
+                voucher_discount = min(voucher.get("value", 0), applicable_total)  # Don't exceed order total
 
     for seller_id, group in seller_groups.items():
         order_number = f"ORD-{datetime.utcnow().strftime('%y%m%d')}-{str(ObjectId())[-6:].upper()}"
@@ -860,12 +877,19 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
             payment_status = "pending"
             paid_at = None
         
-        # Distribute voucher discount proportionally across seller orders
+        # Calculate voucher discount for this order
         order_subtotal = float(group.get("total", 0))
         order_voucher_discount = 0.0
-        if voucher and grand_total > 0:
-            # Proportional discount based on this order's share of grand total
-            order_voucher_discount = (order_subtotal / grand_total) * voucher_discount
+        
+        if voucher:
+            if voucher_seller_id:
+                # Seller voucher - only apply to that specific seller's order
+                if seller_id == voucher_seller_id:
+                    order_voucher_discount = voucher_discount  # Full discount goes to this seller's order
+            else:
+                # Admin/global voucher - distribute proportionally across all orders
+                if grand_total > 0:
+                    order_voucher_discount = (order_subtotal / grand_total) * voucher_discount
         
         order_doc = {
             "user_id": user_id,
@@ -958,6 +982,72 @@ async def get_orders(page: int = 1, page_size: int = 10, user=Depends(_get_curre
     return {"status": "success", "orders": [_normalize_order(d) for d in docs], "total": total}
 
 
+@router.get("/orders/seller")
+async def get_seller_orders(page: int = 1, page_size: int = 10, user=Depends(_require_seller)):
+    """Get orders for seller's products."""
+    print(f"[get_seller_orders] Called with page={page}, page_size={page_size}, user_id={user.get('_id') if user else None}")
+    try:
+        orders_collection = _get_orders_collection()
+        products_collection = _get_products_collection()
+        if orders_collection is None or products_collection is None:
+            print("[get_seller_orders] Database not configured")
+            raise HTTPException(status_code=500, detail="Database not configured")
+        if page < 1 or page_size < 1 or page_size > 50:
+            print(f"[get_seller_orders] Invalid pagination: page={page}, page_size={page_size}")
+            raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+
+        seller_id = str(user.get("_id"))
+        
+        # Find all products belonging to this seller
+        seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1}))
+        seller_product_ids = {str(p.get("_id")) for p in seller_products}
+        
+        if not seller_product_ids:
+            return {"status": "success", "orders": [], "total": 0}
+        
+        # Find all orders that contain at least one of the seller's products
+        all_orders = list(orders_collection.find({}).sort("created_at", -1))
+        matching_orders = []
+        
+        for doc in all_orders:
+            items = doc.get("items", [])
+            seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+            if seller_items:
+                matching_orders.append(doc)
+        
+        total = len(matching_orders)
+        # Apply pagination
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_orders = matching_orders[start:end]
+        
+        # Format orders for response
+        formatted_orders = []
+        for doc in paginated_orders:
+            items = doc.get("items", [])
+            seller_items = [it for it in items if it.get("product_id") in seller_product_ids]
+            seller_total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in seller_items)
+            order_obj = _normalize_order(doc)
+            formatted_orders.append({
+                "id": order_obj.get("id"),
+                "order_number": order_obj.get("order_number", order_obj.get("id")),
+                "customer": order_obj.get("address", {}).get("full_name", "Customer"),
+                "total": seller_total,
+                "status": order_obj.get("status", "pending"),
+                "created_at": order_obj.get("created_at"),
+                "items": seller_items
+            })
+        
+        return {"status": "success", "orders": formatted_orders, "total": total}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_seller_orders: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
 @router.get("/orders/{order_id}")
 async def get_order_by_id(order_id: str, user=Depends(_get_current_user_from_header)):
     """Get a single order by ID."""
@@ -982,26 +1072,6 @@ async def get_order_by_id(order_id: str, user=Depends(_get_current_user_from_hea
         raise HTTPException(status_code=403, detail="Access denied")
 
     return {"status": "success", "order": _normalize_order(doc)}
-
-
-@router.get("/orders/seller")
-async def get_seller_orders(page: int = 1, page_size: int = 10, user=Depends(_require_seller)):
-    """Get orders for seller's products."""
-    orders_collection = _get_orders_collection()
-    if orders_collection is None:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    if page < 1 or page_size < 1 or page_size > 50:
-        raise HTTPException(status_code=400, detail="Invalid pagination parameters")
-
-    seller_id = str(user.get("_id"))
-    total = orders_collection.count_documents({"seller_id": seller_id})
-    docs = list(
-        orders_collection.find({"seller_id": seller_id})
-        .sort("created_at", -1)
-        .skip((page - 1) * page_size)
-        .limit(page_size)
-    )
-    return {"status": "success", "orders": [_normalize_order(d) for d in docs], "total": total}
 
 
 @router.put("/orders/{order_id}/cancel")
@@ -1277,6 +1347,7 @@ async def create_seller_product(body: ProductCreateBody, user=Depends(_require_s
         "category_name": category_name,
         "stock_qty": int(body.stock_qty),
         "status": body.status or "available",
+        "grade": body.grade if body.grade in ["export", "local"] else "export",
         "images": [],
         "main_image_index": 0,
         "is_disabled": False,
@@ -1323,6 +1394,9 @@ async def update_seller_product(product_id: str, body: ProductUpdateBody, user=D
         updates["stock_qty"] = int(body.stock_qty)
     if body.status is not None:
         updates["status"] = body.status
+    if body.grade is not None:
+        if body.grade in ["export", "local"]:
+            updates["grade"] = body.grade
     if body.main_image_index is not None:
         updates["main_image_index"] = int(body.main_image_index)
     if body.category_id is not None and categories_collection is not None:
@@ -1726,6 +1800,95 @@ async def get_seller_recent_reviews(limit: int = 5, user=Depends(_require_seller
     except Exception as e:
         print(f"Error in get_seller_recent_reviews: {e}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@router.get("/seller/reviews")
+async def get_seller_all_reviews(page: int = 1, page_size: int = 20, user=Depends(_require_seller)):
+    """Get all reviews for seller's products with pagination."""
+    db = get_db()
+    products_collection = _get_products_collection()
+    if db is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    if page < 1 or page_size < 1 or page_size > 50:
+        raise HTTPException(status_code=400, detail="Invalid pagination parameters")
+
+    seller_id = str(user.get("_id"))
+    try:
+        seller_products = list(products_collection.find({"seller_id": seller_id}, {"_id": 1, "name": 1}))
+        seller_product_oids = [p.get("_id") for p in seller_products if p.get("_id")]
+        product_names = {str(p.get("_id")): p.get("name", "Unknown Product") for p in seller_products}
+
+        if not seller_product_oids:
+            return {"status": "success", "reviews": [], "total": 0, "page": page, "page_size": page_size}
+
+        reviews_collection = db["product_reviews"]
+        query = {"product_id": {"$in": seller_product_oids}}
+        total = reviews_collection.count_documents(query)
+        docs = list(
+            reviews_collection.find(query)
+            .sort("created_at", -1)
+            .skip((page - 1) * page_size)
+            .limit(page_size)
+        )
+
+        reviews = []
+        for doc in docs:
+            reviews.append({
+                "id": str(doc.get("_id")),
+                "user_id": str(doc.get("user_id", "")),
+                "user_name": doc.get("user_name", "Anonymous"),
+                "rating": doc.get("rating", 0),
+                "comment": doc.get("comment", ""),
+                "product_id": str(doc.get("product_id", "")),
+                "product_name": product_names.get(str(doc.get("product_id")), "Unknown Product"),
+                "seller_reply": doc.get("seller_reply"),
+                "created_at": doc.get("created_at", ""),
+            })
+        return {"status": "success", "reviews": reviews, "total": total, "page": page, "page_size": page_size}
+    except Exception as e:
+        print(f"Error in get_seller_all_reviews: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+class SellerReplyBody(BaseModel):
+    reply: str
+
+
+@router.post("/seller/reviews/{review_id}/reply")
+async def seller_reply_to_review(review_id: str, body: SellerReplyBody, user=Depends(_require_seller)):
+    """Seller can reply to a review on their product."""
+    db = get_db()
+    products_collection = _get_products_collection()
+    if db is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        review_oid = ObjectId(review_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid review ID")
+    
+    seller_id = str(user.get("_id"))
+    reviews_collection = db["product_reviews"]
+    
+    # Get the review
+    review = reviews_collection.find_one({"_id": review_oid})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # Verify the review is for seller's product
+    product_id = review.get("product_id")
+    product = products_collection.find_one({"_id": product_id, "seller_id": seller_id})
+    if not product:
+        raise HTTPException(status_code=403, detail="You can only reply to reviews on your products")
+    
+    # Update the review with seller reply
+    reviews_collection.update_one(
+        {"_id": review_oid},
+        {"$set": {"seller_reply": body.reply, "seller_reply_at": datetime.utcnow().isoformat()}}
+    )
+    
+    return {"status": "success", "message": "Reply added successfully"}
 
 
 @router.get("/seller/analytics/products/top")
@@ -2748,11 +2911,15 @@ async def list_vouchers(
     user_id = str(user.get("_id"))
     user_role = user.get("role", "user")
     
+    # Convert seller_id to ObjectId for query since it's stored as ObjectId
     if seller_id:
-        query = {"seller_id": seller_id}
+        try:
+            query = {"seller_id": ObjectId(seller_id)}
+        except:
+            query = {"seller_id": seller_id}
     else:
         if user_role != "admin":
-            query = {"seller_id": user_id}
+            query = {"seller_id": ObjectId(user_id)}
         else:
             query = {}
     
@@ -3056,12 +3223,15 @@ async def validate_voucher(request: VoucherValidateRequest, user=Depends(_get_cu
             )
         
         # Return the raw voucher value - frontend will calculate the discount
+        # Include seller_id so frontend knows if this is a seller-specific voucher
+        voucher_seller_id = str(voucher["seller_id"]) if voucher.get("seller_id") else None
         return {
             "status": "success",
             "valid": True,
             "discount_value": voucher["value"],
             "discount_type": voucher["discount_type"],
-            "voucher_id": str(voucher["_id"])
+            "voucher_id": str(voucher["_id"]),
+            "seller_id": voucher_seller_id  # null = global voucher, string = seller-specific
         }
     except HTTPException:
         raise

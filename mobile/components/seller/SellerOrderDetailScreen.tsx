@@ -10,8 +10,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
+import { theme } from "../../styles/theme";
 import { OrderDetail, Screen } from "../../types";
-import { getOrderById, updateOrderStatus } from "../../services/api";
+import { getOrderById, updateSellerOrderStatus } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   orderId: string;
@@ -27,7 +29,11 @@ const statusColors: Record<string, string> = {
   cancelled: "#EF4444",
 };
 
+// Full status flow for display purposes
 const statusFlow = ["pending", "confirmed", "shipped", "delivered"];
+
+// Seller can only change to these statuses (not delivered - that's customer/system)
+const sellerAllowedStatuses = ["confirmed", "shipped"];
 
 export default function SellerOrderDetailScreen({
   orderId,
@@ -45,7 +51,7 @@ export default function SellerOrderDetailScreen({
   const loadOrder = async () => {
     try {
       setLoading(true);
-      const data = await getOrderById(orderId);
+      const data = await getOrderById(API_BASE_URL, orderId);
       setOrder(data);
     } catch (err) {
       console.error("Failed to load order:", err);
@@ -65,7 +71,7 @@ export default function SellerOrderDetailScreen({
         onPress: async () => {
           try {
             setUpdating(true);
-            await updateOrderStatus(order.id, newStatus);
+            await updateSellerOrderStatus(API_BASE_URL, order.id, newStatus);
             await loadOrder();
             Alert.alert("Success", "Order status updated");
           } catch (err) {
@@ -81,8 +87,11 @@ export default function SellerOrderDetailScreen({
   const getNextStatus = () => {
     if (!order) return null;
     const currentIdx = statusFlow.indexOf(order.status);
-    if (currentIdx === -1 || currentIdx === statusFlow.length - 1) return null;
-    return statusFlow[currentIdx + 1];
+    if (currentIdx === -1 || currentIdx >= statusFlow.length - 1) return null;
+    const nextInFlow = statusFlow[currentIdx + 1];
+    // Seller can only set confirmed or shipped, not delivered
+    if (!sellerAllowedStatuses.includes(nextInFlow)) return null;
+    return nextInFlow;
   };
 
   if (loading) {
@@ -102,11 +111,11 @@ export default function SellerOrderDetailScreen({
     return (
       <View style={ecommerceStyles.container}>
         <View style={ecommerceStyles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
+            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={ecommerceStyles.headerTitle}>Order Not Found</Text>
-          <View style={{ width: 24 }} />
+          <View style={{ width: theme.header.backButtonSize }} />
         </View>
       </View>
     );
@@ -118,13 +127,13 @@ export default function SellerOrderDetailScreen({
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>
           Order #{order.orderNumber}
         </Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: theme.header.backButtonSize }} />
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>

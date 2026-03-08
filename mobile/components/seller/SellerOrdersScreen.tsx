@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { RecentOrder, Screen } from "../../types";
 import { getSellerOrders } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -38,10 +39,11 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
   const loadOrders = async () => {
     try {
       setLoading(true);
-      const data = await getSellerOrders();
-      setOrders(data);
+      const data = await getSellerOrders(API_BASE_URL);
+      setOrders(Array.isArray(data?.orders) ? data.orders : []);
     } catch (err) {
       console.error("Failed to load orders:", err);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -53,7 +55,9 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
     setRefreshing(false);
   };
 
-  const filteredOrders = orders.filter(
+  // Ensure orders is always an array before filtering
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const filteredOrders = safeOrders.filter(
     (o) => statusFilter === "all" || o.status === statusFilter,
   );
 
@@ -81,7 +85,7 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
           }}
         >
           <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
-            #{item.orderNumber}
+            #{item.order_number}
           </Text>
           <View
             style={{
@@ -114,7 +118,7 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
           }}
         >
           <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-            {new Date(item.date).toLocaleDateString("en-PH")}
+            {new Date(item.created_at).toLocaleDateString("en-PH")}
           </Text>
           <Text style={{ fontSize: 16, fontWeight: "bold", color: "#3B82F6" }}>
             ₱{item.total.toLocaleString()}
@@ -137,7 +141,7 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Orders</Text>
@@ -145,35 +149,37 @@ export default function SellerOrdersScreen({ onNavigate, onBack }: Props) {
       </View>
 
       {/* Status Filter */}
-      <FlatList
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        data={statuses}
-        keyExtractor={(item) => item}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={{
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-              borderRadius: 20,
-              backgroundColor: statusFilter === item ? "#3B82F6" : "#F1F5F9",
-              marginRight: 8,
-            }}
-            onPress={() => setStatusFilter(item)}
-          >
-            <Text
+      <View style={{ height: 50 }}>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={statuses}
+          keyExtractor={(item) => item}
+          contentContainerStyle={{ paddingHorizontal: 16, alignItems: "center" }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
               style={{
-                color: statusFilter === item ? "#fff" : "#64748B",
-                fontWeight: "500",
-                textTransform: "capitalize",
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 20,
+                backgroundColor: statusFilter === item ? "#3B82F6" : "#F1F5F9",
+                marginRight: 8,
               }}
+              onPress={() => setStatusFilter(item)}
             >
-              {item}
-            </Text>
-          </TouchableOpacity>
-        )}
-      />
+              <Text
+                style={{
+                  color: statusFilter === item ? "#fff" : "#64748B",
+                  fontWeight: "500",
+                  textTransform: "capitalize",
+                }}
+              >
+                {item}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
 
       {loading ? (
         <View

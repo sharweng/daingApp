@@ -33,6 +33,7 @@ export type Screen =
   | "sellerOrders"
   | "sellerOrderDetail"
   | "sellerReviews"
+  | "sellerVouchers"
   | "sellerDiscounts"
   | "sellerDiscountEdit"
   // Admin screens
@@ -315,6 +316,7 @@ export interface SellerProduct {
   category_name?: string;
   stock_qty: number;
   status: string;
+  grade?: "export" | "local";
   images: ProductImage[];
   main_image_index: number;
   is_disabled: boolean;
@@ -458,6 +460,8 @@ export interface SellerReview {
   rating: number;
   comment: string;
   product_name: string;
+  product_id?: string;
+  seller_reply?: string | null;
   created_at: string;
 }
 

@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { SellerProduct, Screen } from "../../types";
 import { getSellerProducts, deleteSellerProduct } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -32,10 +33,11 @@ export default function SellerProductsScreen({ onNavigate, onBack }: Props) {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const data = await getSellerProducts();
-      setProducts(data);
+      const data = await getSellerProducts(API_BASE_URL, {});
+      setProducts(Array.isArray(data?.products) ? data.products : []);
     } catch (err) {
       console.error("Failed to load products:", err);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -52,8 +54,8 @@ export default function SellerProductsScreen({ onNavigate, onBack }: Props) {
           style: "destructive",
           onPress: async () => {
             try {
-              await deleteSellerProduct(product.id);
-              setProducts(products.filter((p) => p.id !== product.id));
+              await deleteSellerProduct(API_BASE_URL, product.id);
+              setProducts((prev) => prev.filter((p) => p.id !== product.id));
               Alert.alert("Success", "Product deleted");
             } catch (err) {
               Alert.alert("Error", "Failed to delete product");
@@ -64,117 +66,125 @@ export default function SellerProductsScreen({ onNavigate, onBack }: Props) {
     );
   };
 
-  const filteredProducts = products.filter((p) => {
+  // Ensure products is always an array before filtering
+  const safeProducts = Array.isArray(products) ? products : [];
+  const filteredProducts = safeProducts.filter((p) => {
     const matchesSearch = p.name
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
+    const isActive = p.status === "available" && !p.is_disabled;
     const matchesFilter =
-      filter === "all" || (filter === "active" ? p.isActive : !p.isActive);
+      filter === "all" || (filter === "active" ? isActive : !isActive);
     return matchesSearch && matchesFilter;
   });
 
   const renderProduct = useCallback(
-    ({ item }: { item: SellerProduct }) => (
-      <View
-        style={{
-          backgroundColor: "#1E293B",
-          borderRadius: 12,
-          padding: 12,
-          marginBottom: 12,
-          flexDirection: "row",
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 2,
-          elevation: 1,
-        }}
-      >
-        <Image
-          source={{ uri: item.image || "https://via.placeholder.com/80" }}
-          style={{ width: 80, height: 80, borderRadius: 8 }}
-        />
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
+    ({ item }: { item: SellerProduct }) => {
+      const imageUrl = item.images?.[item.main_image_index ?? 0]?.url || item.images?.[0]?.url;
+      const isActive = item.status === "available" && !item.is_disabled;
+      return (
+        <TouchableOpacity
+          style={{
+            backgroundColor: "#1E293B",
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 12,
+            flexDirection: "row",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 2,
+            elevation: 1,
+          }}
+          onPress={() => onNavigate("productDetail", { productId: item.id })}
+        >
+          <Image
+            source={{ uri: imageUrl || "https://via.placeholder.com/80" }}
+            style={{ width: 80, height: 80, borderRadius: 8 }}
+          />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "600",
+                  color: "#FFFFFF",
+                  flex: 1,
+                }}
+              >
+                {item.name}
+              </Text>
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 4,
+                  backgroundColor: isActive ? "#D1FAE5" : "#FEE2E2",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 10,
+                    color: isActive ? "#10B981" : "#EF4444",
+                    fontWeight: "600",
+                  }}
+                >
+                  {isActive ? "Active" : "Inactive"}
+                </Text>
+              </View>
+            </View>
             <Text
               style={{
                 fontSize: 14,
-                fontWeight: "600",
-                color: "#FFFFFF",
-                flex: 1,
+                fontWeight: "bold",
+                color: "#3B82F6",
+                marginTop: 4,
               }}
             >
-              {item.name}
+              ₱{item.price.toLocaleString()}
             </Text>
-            <View
-              style={{
-                paddingHorizontal: 8,
-                paddingVertical: 2,
-                borderRadius: 4,
-                backgroundColor: item.isActive ? "#D1FAE5" : "#FEE2E2",
-              }}
-            >
-              <Text
+            <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
+              Stock: {item.stock_qty || 0} | Sold: {item.sold_count || 0}
+            </Text>
+            <View style={{ flexDirection: "row", marginTop: 8, gap: 8 }}>
+              <TouchableOpacity
                 style={{
-                  fontSize: 10,
-                  color: item.isActive ? "#10B981" : "#EF4444",
-                  fontWeight: "600",
+                  flex: 1,
+                  backgroundColor: "#334155",
+                  borderRadius: 8,
+                  paddingVertical: 6,
+                  alignItems: "center",
                 }}
+                onPress={() =>
+                  onNavigate("sellerProductEdit", { productId: item.id })
+                }
               >
-                {item.isActive ? "Active" : "Inactive"}
-              </Text>
+                <Ionicons name="pencil" size={16} color="#64748B" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: "#FEE2E2",
+                  borderRadius: 8,
+                  paddingVertical: 6,
+                  alignItems: "center",
+                }}
+                onPress={() => handleDelete(item)}
+              >
+                <Ionicons name="trash" size={16} color="#EF4444" />
+              </TouchableOpacity>
             </View>
           </View>
-          <Text
-            style={{
-              fontSize: 14,
-              fontWeight: "bold",
-              color: "#3B82F6",
-              marginTop: 4,
-            }}
-          >
-            ₱{item.price.toLocaleString()}
-          </Text>
-          <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-            Stock: {item.stock} | Sold: {item.sold}
-          </Text>
-          <View style={{ flexDirection: "row", marginTop: 8, gap: 8 }}>
-            <TouchableOpacity
-              style={{
-                flex: 1,
-                backgroundColor: "#334155",
-                borderRadius: 8,
-                paddingVertical: 6,
-                alignItems: "center",
-              }}
-              onPress={() =>
-                onNavigate("sellerProductEdit", { productId: item.id })
-              }
-            >
-              <Ionicons name="pencil" size={16} color="#64748B" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{
-                flex: 1,
-                backgroundColor: "#FEE2E2",
-                borderRadius: 8,
-                paddingVertical: 6,
-                alignItems: "center",
-              }}
-              onPress={() => handleDelete(item)}
-            >
-              <Ionicons name="trash" size={16} color="#EF4444" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    ),
-    [products],
+        </TouchableOpacity>
+      );
+    },
+    [products, handleDelete, onNavigate],
   );
 
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>My Products</Text>

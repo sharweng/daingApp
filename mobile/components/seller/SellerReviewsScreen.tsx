@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ecommerceStyles } from "../../styles/ecommerce";
 import { SellerReview, Screen } from "../../types";
 import { getSellerReviews, replyToReview } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   onNavigate: (screen: Screen, params?: any) => void;
@@ -35,8 +36,8 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
   const loadReviews = async () => {
     try {
       setLoading(true);
-      const data = await getSellerReviews();
-      setReviews(data);
+      const data = await getSellerReviews(API_BASE_URL);
+      setReviews(data.reviews);
     } catch (err) {
       console.error("Failed to load reviews:", err);
     } finally {
@@ -58,7 +59,7 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
 
     try {
       setSubmitting(true);
-      await replyToReview(reviewId, replyText.trim());
+      await replyToReview(API_BASE_URL, reviewId, replyText.trim());
       setReplyingTo(null);
       setReplyText("");
       await loadReviews();
@@ -110,10 +111,10 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
           />
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
-              {item.productName}
+              {item.product_name}
             </Text>
             <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>
-              Order #{item.orderNumber}
+              Product Review
             </Text>
           </View>
         </View>
@@ -140,17 +141,17 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
             <Text
               style={{ fontSize: 12, fontWeight: "bold", color: "#94A3B8" }}
             >
-              {item.customerName.charAt(0).toUpperCase()}
+              {(item.user_name || "A").charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
-              {item.customerName}
+              {item.user_name || "Anonymous"}
             </Text>
             {renderStars(item.rating)}
           </View>
           <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-            {new Date(item.createdAt).toLocaleDateString()}
+            {new Date(item.created_at).toLocaleDateString()}
           </Text>
         </View>
 
@@ -159,7 +160,7 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
         </Text>
 
         {/* Existing Reply */}
-        {item.reply && (
+        {item.seller_reply && (
           <View
             style={{
               backgroundColor: "#334155",
@@ -179,12 +180,12 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
             >
               Your Reply
             </Text>
-            <Text style={{ fontSize: 14, color: "#94A3B8" }}>{item.reply}</Text>
+            <Text style={{ fontSize: 14, color: "#94A3B8" }}>{item.seller_reply}</Text>
           </View>
         )}
 
         {/* Reply Input */}
-        {!item.reply && (
+        {!item.seller_reply && (
           <>
             {replyingTo === item.id ? (
               <View>
@@ -278,7 +279,7 @@ export default function SellerReviewsScreen({ onNavigate, onBack }: Props) {
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>Reviews</Text>

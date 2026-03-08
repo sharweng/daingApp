@@ -11,14 +11,18 @@ import {
   Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { ecommerceStyles } from "../../styles/ecommerce";
-import { Screen, ProductCategory } from "../../types";
+import { Screen, ProductCategory, ProductImage } from "../../types";
 import {
-  getSellerProductById,
+  getSellerProduct,
   createSellerProduct,
   updateSellerProduct,
   getCatalogCategories,
+  uploadSellerProductImages,
+  deleteSellerProductImage,
 } from "../../services/api";
+import { API_BASE_URL } from "../../constants/config";
 
 interface Props {
   productId?: string | null;
@@ -39,12 +43,13 @@ export default function SellerProductEditScreen({
     name: "",
     description: "",
     price: "",
-    stock: "",
-    category: "",
-    grade: "A",
-    isActive: true,
-    images: [] as string[],
+    stock_qty: "",
+    category_id: "",
+    status: "available",
+    grade: "export" as "export" | "local",
+    images: [] as ProductImage[],
   });
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   const isEditing = !!productId;
 
@@ -57,7 +62,7 @@ export default function SellerProductEditScreen({
 
   const loadCategories = async () => {
     try {
-      const cats = await getCatalogCategories();
+      const cats = await getCatalogCategories(API_BASE_URL);
       setCategories(cats);
     } catch (err) {
       console.error("Failed to load categories:", err);
@@ -67,15 +72,20 @@ export default function SellerProductEditScreen({
   const loadProduct = async () => {
     try {
       setLoading(true);
-      const product = await getSellerProductById(productId!);
+      const product = await getSellerProduct(API_BASE_URL, productId!);
+      if (!product) {
+        Alert.alert("Error", "Product not found");
+        onBack();
+        return;
+      }
       setForm({
         name: product.name,
         description: product.description || "",
-        price: product.price.toString(),
-        stock: product.stock.toString(),
-        category: product.category,
-        grade: product.grade || "A",
-        isActive: product.isActive,
+        price: (product.price || 0).toString(),
+        stock_qty: (product.stock_qty || 0).toString(),
+        category_id: product.category_id || "",
+        status: product.status || "available",
+        grade: product.grade || "export",
         images: product.images || [],
       });
     } catch (err) {
@@ -84,6 +94,85 @@ export default function SellerProductEditScreen({
       onBack();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePickImages = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please grant camera roll permission");
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        if (!productId) {
+          // For new products, store URIs temporarily
+          const newImages = result.assets.map((asset, idx) => ({
+            url: asset.uri,
+            public_id: `temp_${Date.now()}_${idx}`,
+          }));
+          setForm({ ...form, images: [...form.images, ...newImages] });
+        } else {
+          // For existing products, upload immediately
+          setUploadingImages(true);
+          try {
+            const imagesToUpload = result.assets.map((asset) => ({
+              uri: asset.uri,
+              name: asset.fileName || `image_${Date.now()}.jpg`,
+              type: asset.mimeType || "image/jpeg",
+            }));
+            const uploadResult = await uploadSellerProductImages(
+              API_BASE_URL,
+              productId,
+              imagesToUpload,
+            );
+            if (uploadResult.success && uploadResult.product) {
+              setForm({ ...form, images: uploadResult.product.images || [] });
+            } else {
+              Alert.alert("Error", "Failed to upload images");
+            }
+          } catch (err) {
+            Alert.alert("Error", "Failed to upload images");
+          } finally {
+            setUploadingImages(false);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Image picker error:", err);
+      Alert.alert("Error", "Failed to open image picker");
+    }
+  };
+
+  const handleDeleteImage = async (index: number) => {
+    if (!productId) {
+      // For new products, just remove from local state
+      setForm({
+        ...form,
+        images: form.images.filter((_, i) => i !== index),
+      });
+    } else {
+      // For existing products, delete from server
+      try {
+        const result = await deleteSellerProductImage(API_BASE_URL, productId, index);
+        if (result.success) {
+          setForm({
+            ...form,
+            images: form.images.filter((_, i) => i !== index),
+          });
+        } else {
+          Alert.alert("Error", "Failed to delete image");
+        }
+      } catch (err) {
+        Alert.alert("Error", "Failed to delete image");
+      }
     }
   };
 
@@ -99,22 +188,43 @@ export default function SellerProductEditScreen({
 
     try {
       setSaving(true);
-      const productData = {
-        name: form.name.trim(),
-        description: form.description.trim(),
-        price: parseFloat(form.price),
-        stock: parseInt(form.stock) || 0,
-        category: form.category,
-        grade: form.grade,
-        isActive: form.isActive,
-        images: form.images,
-      };
-
       if (isEditing) {
-        await updateSellerProduct(productId!, productData);
+        await updateSellerProduct(API_BASE_URL, productId!, {
+          name: form.name.trim(),
+          description: form.description.trim(),
+          price: parseFloat(form.price),
+          stock_qty: parseInt(form.stock_qty) || 0,
+          category_id: form.category_id || null,
+          status: form.status,
+          grade: form.grade,
+        });
         Alert.alert("Success", "Product updated");
       } else {
-        await createSellerProduct(productData);
+        const createResult = await createSellerProduct(API_BASE_URL, {
+          name: form.name.trim(),
+          description: form.description.trim(),
+          price: parseFloat(form.price),
+          stock_qty: parseInt(form.stock_qty) || 0,
+          category_id: form.category_id || undefined,
+          status: form.status,
+          grade: form.grade,
+        });
+        // Upload images for new product if any
+        if (createResult?.success && createResult.product && form.images.length > 0) {
+          const tempImages = form.images.filter((img) => img.url.startsWith("file://") || img.url.startsWith("content://"));
+          if (tempImages.length > 0) {
+            const imagesToUpload = tempImages.map((img) => ({
+              uri: img.url,
+              name: `image_${Date.now()}.jpg`,
+              type: "image/jpeg",
+            }));
+            await uploadSellerProductImages(
+              API_BASE_URL,
+              createResult.product.id,
+              imagesToUpload,
+            );
+          }
+        }
         Alert.alert("Success", "Product created");
       }
       onBack();
@@ -141,7 +251,7 @@ export default function SellerProductEditScreen({
   return (
     <View style={ecommerceStyles.container}>
       <View style={ecommerceStyles.header}>
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity style={ecommerceStyles.backButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={ecommerceStyles.headerTitle}>
@@ -159,53 +269,48 @@ export default function SellerProductEditScreen({
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
         {/* Images */}
         <Text style={ecommerceStyles.formLabel}>Product Images</Text>
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-          {form.images.length > 0 ? (
-            form.images.map((img, idx) => (
-              <View key={idx} style={{ position: "relative" }}>
-                <Image
-                  source={{ uri: img }}
-                  style={{ width: 80, height: 80, borderRadius: 8 }}
-                />
-                <TouchableOpacity
-                  style={{
-                    position: "absolute",
-                    top: -8,
-                    right: -8,
-                    backgroundColor: "#EF4444",
-                    borderRadius: 12,
-                    padding: 4,
-                  }}
-                  onPress={() =>
-                    setForm({
-                      ...form,
-                      images: form.images.filter((_, i) => i !== idx),
-                    })
-                  }
-                >
-                  <Ionicons name="close" size={12} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            ))
-          ) : (
-            <TouchableOpacity
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: 8,
-                borderWidth: 2,
-                borderColor: "#E2E8F0",
-                borderStyle: "dashed",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              onPress={() =>
-                Alert.alert("Info", "Image picker not implemented in demo")
-              }
-            >
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {form.images.map((img, idx) => (
+            <View key={idx} style={{ position: "relative" }}>
+              <Image
+                source={{ uri: img.url }}
+                style={{ width: 80, height: 80, borderRadius: 8 }}
+              />
+              <TouchableOpacity
+                style={{
+                  position: "absolute",
+                  top: -8,
+                  right: -8,
+                  backgroundColor: "#EF4444",
+                  borderRadius: 12,
+                  padding: 4,
+                }}
+                onPress={() => handleDeleteImage(idx)}
+              >
+                <Ionicons name="close" size={12} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ))}
+          <TouchableOpacity
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: 8,
+              borderWidth: 2,
+              borderColor: "#E2E8F0",
+              borderStyle: "dashed",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onPress={handlePickImages}
+            disabled={uploadingImages}
+          >
+            {uploadingImages ? (
+              <ActivityIndicator size="small" color="#CBD5E1" />
+            ) : (
               <Ionicons name="camera" size={24} color="#CBD5E1" />
-            </TouchableOpacity>
-          )}
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Name */}
@@ -254,9 +359,9 @@ export default function SellerProductEditScreen({
               placeholder="0"
               placeholderTextColor="#94A3B8"
               keyboardType="numeric"
-              value={form.stock}
+              value={form.stock_qty}
               onChangeText={(text) =>
-                setForm({ ...form, stock: text.replace(/[^0-9]/g, "") })
+                setForm({ ...form, stock_qty: text.replace(/[^0-9]/g, "") })
               }
             />
           </View>
@@ -280,13 +385,13 @@ export default function SellerProductEditScreen({
                 paddingVertical: 8,
                 borderRadius: 20,
                 backgroundColor:
-                  form.category === cat.id ? "#3B82F6" : "#F1F5F9",
+                  form.category_id === cat.id ? "#3B82F6" : "#F1F5F9",
               }}
-              onPress={() => setForm({ ...form, category: cat.id })}
+              onPress={() => setForm({ ...form, category_id: cat.id })}
             >
               <Text
                 style={{
-                  color: form.category === cat.id ? "#fff" : "#64748B",
+                  color: form.category_id === cat.id ? "#fff" : "#64748B",
                   fontWeight: "500",
                 }}
               >
@@ -298,33 +403,57 @@ export default function SellerProductEditScreen({
 
         {/* Grade */}
         <Text style={ecommerceStyles.formLabel}>Grade</Text>
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-          {["A", "B", "C"].map((g) => (
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          {[
+            { value: "export", label: "Export Grade", desc: "Premium quality for export" },
+            { value: "local", label: "Local Grade", desc: "Standard quality for local market" },
+          ].map((gradeOption) => (
             <TouchableOpacity
-              key={g}
+              key={gradeOption.value}
               style={{
                 flex: 1,
                 paddingVertical: 12,
-                borderRadius: 8,
-                backgroundColor: form.grade === g ? "#3B82F6" : "#F1F5F9",
-                alignItems: "center",
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                backgroundColor:
+                  form.grade === gradeOption.value ? "#10B981" : "#334155",
+                borderWidth: 2,
+                borderColor:
+                  form.grade === gradeOption.value ? "#10B981" : "#475569",
               }}
-              onPress={() => setForm({ ...form, grade: g })}
+              onPress={() => setForm({ ...form, grade: gradeOption.value as "export" | "local" })}
             >
               <Text
                 style={{
-                  fontSize: 16,
-                  fontWeight: "bold",
-                  color: form.grade === g ? "#fff" : "#64748B",
+                  color: "#FFFFFF",
+                  fontWeight: "600",
+                  fontSize: 14,
+                  textAlign: "center",
                 }}
               >
-                {g}
+                {gradeOption.label}
+              </Text>
+              <Text
+                style={{
+                  color: "#94A3B8",
+                  fontSize: 11,
+                  textAlign: "center",
+                  marginTop: 4,
+                }}
+              >
+                {gradeOption.desc}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Active */}
+        {/* Status */}
         <View
           style={{
             flexDirection: "row",
@@ -338,15 +467,15 @@ export default function SellerProductEditScreen({
         >
           <View>
             <Text style={{ fontSize: 16, fontWeight: "600", color: "#FFFFFF" }}>
-              Product Active
+              Product Available
             </Text>
             <Text style={{ fontSize: 14, color: "#94A3B8" }}>
-              Show in catalog
+              Show in catalog and allow purchases
             </Text>
           </View>
           <Switch
-            value={form.isActive}
-            onValueChange={(val) => setForm({ ...form, isActive: val })}
+            value={form.status === "available"}
+            onValueChange={(val) => setForm({ ...form, status: val ? "available" : "inactive" })}
             trackColor={{ false: "#E2E8F0", true: "#3B82F6" }}
             thumbColor="#fff"
           />

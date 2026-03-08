@@ -47,6 +47,7 @@ import SellerProductEditScreen from "../components/seller/SellerProductEditScree
 import SellerOrdersScreen from "../components/seller/SellerOrdersScreen";
 import SellerOrderDetailScreen from "../components/seller/SellerOrderDetailScreen";
 import SellerReviewsScreen from "../components/seller/SellerReviewsScreen";
+import SellerVouchersScreen from "../components/seller/SellerVouchersScreen";
 // Admin screens
 import AdminDashboardScreen from "../components/admin/AdminDashboardScreen";
 import AdminUsersScreen from "../components/admin/AdminUsersScreen";
@@ -661,6 +662,10 @@ export default function Index() {
 
   if (currentScreen === "sellerReviews") {
     return <SellerReviewsScreen onNavigate={navigate} onBack={goBack} />;
+  }
+
+  if (currentScreen === "sellerVouchers") {
+    return <SellerVouchersScreen onNavigate={navigate} onBack={goBack} />;
   }
 
   // ============================================

@@ -1721,6 +1721,7 @@ export const createSellerProduct = async (
     category_id?: string;
     stock_qty: number;
     status?: string;
+    grade?: "export" | "local";
   },
 ): Promise<{ success: boolean; product?: SellerProduct }> => {
   try {
@@ -1748,6 +1749,7 @@ export const updateSellerProduct = async (
     category_id?: string | null;
     stock_qty?: number;
     status?: string;
+    grade?: "export" | "local";
     main_image_index?: number;
   },
 ): Promise<{ success: boolean; product?: SellerProduct }> => {
@@ -1811,25 +1813,32 @@ export const uploadSellerProductImages = async (
   mainIndex?: number,
 ): Promise<{ success: boolean; product?: SellerProduct }> => {
   try {
-    const formData = new FormData();
-    images.forEach((img) => {
-      // @ts-ignore
-      formData.append("images", img);
-    });
-    if (typeof mainIndex === "number") {
-      formData.append("main_index", String(mainIndex));
-    }
+    let lastProduct: SellerProduct | undefined;
+    
+    // Upload images one at a time since backend expects single file
+    for (const img of images) {
+      const formData = new FormData();
+      // @ts-ignore - React Native FormData requires these specific fields
+      formData.append("file", {
+        uri: img.uri,
+        name: img.name,
+        type: img.type,
+      });
 
-    const response = await axios.post(
-      `${normalizeUrl(baseUrl)}/seller/products/${productId}/images`,
-      formData,
-      {
-        headers: { ...getAuthHeaders(), "Content-Type": "multipart/form-data" },
-        timeout: 30000,
-      },
-    );
-    return { success: true, product: response.data.product };
+      const response = await axios.post(
+        `${normalizeUrl(baseUrl)}/seller/products/${productId}/images`,
+        formData,
+        {
+          headers: { ...getAuthHeaders(), "Content-Type": "multipart/form-data" },
+          timeout: 30000,
+        },
+      );
+      lastProduct = response.data.product;
+    }
+    
+    return { success: true, product: lastProduct };
   } catch (error) {
+    console.error("Upload error:", error);
     return { success: false };
   }
 };
@@ -1968,6 +1977,49 @@ export const getSellerRecentReviews = async (
     return response.data.reviews || [];
   } catch (error) {
     return [];
+  }
+};
+
+export const getSellerReviews = async (
+  baseUrl: string,
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<{ reviews: SellerReview[]; total: number }> => {
+  try {
+    const response = await axios.get(
+      `${normalizeUrl(baseUrl)}/seller/reviews`,
+      {
+        params: { page, page_size: pageSize },
+        headers: getAuthHeaders(),
+        timeout: 10000,
+      },
+    );
+    return {
+      reviews: response.data.reviews || [],
+      total: response.data.total || 0,
+    };
+  } catch (error) {
+    return { reviews: [], total: 0 };
+  }
+};
+
+export const replyToReview = async (
+  baseUrl: string,
+  reviewId: string,
+  reply: string,
+): Promise<{ success: boolean }> => {
+  try {
+    await axios.post(
+      `${normalizeUrl(baseUrl)}/seller/reviews/${reviewId}/reply`,
+      { reply },
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        timeout: 10000,
+      },
+    );
+    return { success: true };
+  } catch (error) {
+    return { success: false };
   }
 };
 
