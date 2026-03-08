@@ -48,6 +48,9 @@ from .auth import (
     get_current_user_web,
     require_admin_user,
     require_seller_user,
+    # Password utilities
+    hash_password,
+    verify_password,
 )
 from .config import get_db
 
@@ -531,6 +534,66 @@ async def update_profile(body: ProfileUpdateBody, authorization: Optional[str] =
         "gender": updated.get("gender") or "",
         "role": (updated.get("role") or "user").strip().lower(),
     }
+
+
+class ChangePasswordBody(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@router.post("/auth/change-password")
+async def change_password(body: ChangePasswordBody, authorization: Optional[str] = Header(None)):
+    """Change user password (supports both mobile session and web Firebase/JWT auth)."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.replace("Bearer ", "")
+    db = get_db()
+    user = None
+    
+    # Try session-based auth first (mobile), fall back to Firebase (web)
+    auth_result = validate_token(token)
+    if auth_result:
+        from bson import ObjectId
+        user = db["users"].find_one({"_id": ObjectId(auth_result["user_id"])})
+    
+    # Fall back to JWT/Firebase auth (web)
+    if not user:
+        try:
+            from .auth import get_current_user_web
+            from fastapi.security import HTTPAuthorizationCredentials
+            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            user = get_current_user_web.__wrapped__(creds)
+        except Exception as e:
+            print(f"❌ Change password auth fallback failed: {e}")
+            pass
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    
+    # Validate password fields
+    if not body.old_password or not body.new_password:
+        raise HTTPException(status_code=400, detail="Both old and new passwords are required")
+    
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    
+    # Verify old password
+    stored_hash = user.get("password_hash") or user.get("password")
+    if not stored_hash:
+        raise HTTPException(status_code=400, detail="Cannot change password for this account type")
+    
+    if not verify_password(body.old_password, stored_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    # Hash new password and update
+    new_hash = hash_password(body.new_password)
+    db["users"].update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password_hash": new_hash}}
+    )
+    
+    return {"status": "success", "message": "Password changed successfully"}
 
 
 @router.post("/auth/profile/avatar")

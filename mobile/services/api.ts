@@ -773,19 +773,30 @@ export const uploadProfileAvatar = async (
 };
 
 /**
- * Change user password (placeholder - not yet implemented in backend).
+ * Change user password.
  */
 export const changePassword = async (
   baseUrl: string,
   oldPassword: string,
   newPassword: string,
 ): Promise<{ success: boolean; error?: string }> => {
-  // Password change is handled by Firebase Auth for web
-  // For mobile with session-based auth, this would need a backend endpoint
-  return {
-    success: false,
-    error: "Password change is not yet available. Please use the web app.",
-  };
+  try {
+    const response = await axios.post(
+      `${normalizeUrl(baseUrl)}/auth/change-password`,
+      {
+        old_password: oldPassword,
+        new_password: newPassword,
+      },
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        timeout: 10000,
+      },
+    );
+    return { success: true };
+  } catch (error: any) {
+    const message = error.response?.data?.detail || "Failed to change password";
+    return { success: false, error: message };
+  }
 };
 
 export const fetchAllHistory = async (
@@ -1569,25 +1580,62 @@ export const deleteCommunityPost = async (
   }
 };
 
+export const toggleMyPostVisibility = async (
+  baseUrl: string,
+  postId: string,
+): Promise<{ success: boolean; new_status?: string }> => {
+  try {
+    const response = await axios.put(
+      `${normalizeUrl(baseUrl)}/community/posts/${postId}/toggle-visibility`,
+      {},
+      {
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        timeout: 10000,
+      },
+    );
+    return { success: true, new_status: response.data.new_status };
+  } catch (error) {
+    return { success: false };
+  }
+};
+
 export const updateCommunityPost = async (
   baseUrl: string,
   postId: string,
   title: string,
   description: string,
   category: string,
+  newImages?: { uri: string; type?: string; name?: string }[],
+  removeImages?: string[],
 ): Promise<{ success: boolean; post?: any }> => {
   try {
     const formData = new FormData();
     formData.append("title", title);
     formData.append("description", description);
     formData.append("category", category);
+    
+    // Add remove_images as comma-separated string
+    if (removeImages && removeImages.length > 0) {
+      formData.append("remove_images", removeImages.join(","));
+    }
+    
+    // Add new images
+    if (newImages && newImages.length > 0) {
+      newImages.forEach((img) => {
+        formData.append("images", {
+          uri: img.uri,
+          type: img.type || "image/jpeg",
+          name: img.name || `image_${Date.now()}.jpg`,
+        } as any);
+      });
+    }
 
     const response = await axios.put(
       `${normalizeUrl(baseUrl)}/community/posts/${postId}`,
       formData,
       {
         headers: { ...getAuthHeaders(), "Content-Type": "multipart/form-data" },
-        timeout: 10000,
+        timeout: 30000,
       },
     );
     return { success: true, post: response.data.post };
@@ -2336,7 +2384,22 @@ export const listVouchers = async (
       headers: getAuthHeaders(),
       timeout: 10000,
     });
-    return response.data.vouchers || [];
+    // Map backend fields to frontend Voucher type
+    const vouchers = response.data.vouchers || [];
+    return vouchers.map((v: any) => ({
+      id: v._id || v.id,
+      code: v.code || "",
+      discount_type: v.discount_type || "percentage",
+      value: v.value ?? 0,
+      seller_id: v.seller_id || "",
+      expiration_date: v.expiration_date || null,
+      max_uses: v.max_uses ?? null,
+      per_user_limit: v.per_user_limit ?? null,
+      min_order_amount: v.min_order_amount ?? null,
+      used_count: v.current_uses ?? v.used_count ?? 0,
+      active: v.active ?? true,
+      created_at: v.created_at || "",
+    }));
   } catch (error) {
     return [];
   }

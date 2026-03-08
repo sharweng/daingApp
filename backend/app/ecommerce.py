@@ -754,7 +754,7 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
     voucher = None
     voucher_discount = 0.0
     voucher_discount_type = None
-    if body.voucher_id and vouchers_collection:
+    if body.voucher_id and vouchers_collection is not None:
         try:
             voucher = vouchers_collection.find_one({"_id": ObjectId(body.voucher_id), "active": True})
             if voucher:
@@ -892,7 +892,7 @@ async def checkout_order(body: OrderCreateBody, user=Depends(_get_current_user_f
         created_orders.append(order_doc)
 
     # Update voucher usage if used
-    if voucher and vouchers_collection:
+    if voucher and vouchers_collection is not None:
         try:
             # Update current_uses
             vouchers_collection.update_one(
@@ -2984,19 +2984,21 @@ async def update_voucher(voucher_id: str, body: VoucherUpdateBody, user=Depends(
 
 @router.delete("/api/vouchers/{voucher_id}")
 async def delete_voucher(voucher_id: str, user=Depends(_get_current_user)):
-    """Delete a voucher (only own vouchers can be deleted)."""
+    """Delete a voucher (own vouchers or admin can delete any)."""
     vouchers_collection = _get_vouchers_collection()
     if vouchers_collection is None:
         raise HTTPException(status_code=500, detail="Database not configured")
     
     user_id = str(user.get("_id"))
+    user_role = user.get("role", "user")
     
     try:
         voucher = vouchers_collection.find_one({"_id": ObjectId(voucher_id)})
         if not voucher:
             raise HTTPException(status_code=404, detail="Voucher not found")
         
-        if str(voucher["seller_id"]) != user_id:
+        # Allow delete if user is admin or if it's their own voucher
+        if user_role != "admin" and str(voucher["seller_id"]) != user_id:
             raise HTTPException(status_code=403, detail="You can only delete your own voucher codes")
         
         vouchers_collection.delete_one({"_id": ObjectId(voucher_id)})
@@ -3008,13 +3010,20 @@ async def delete_voucher(voucher_id: str, user=Depends(_get_current_user)):
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
+class VoucherValidateRequest(BaseModel):
+    code: str
+    order_total: float
+
+
 @router.post("/api/vouchers/validate")
-async def validate_voucher(code: str, order_total: float, user=Depends(_get_current_user)):
+async def validate_voucher(request: VoucherValidateRequest, user=Depends(_get_current_user)):
     """Validate a voucher code and return discount info."""
     vouchers_collection = _get_vouchers_collection()
     if vouchers_collection is None:
         raise HTTPException(status_code=500, detail="Database not configured")
     
+    code = request.code
+    order_total = request.order_total
     user_id = str(user.get("_id"))
     
     try:
@@ -3046,16 +3055,11 @@ async def validate_voucher(code: str, order_total: float, user=Depends(_get_curr
                 detail=f"Minimum order amount of ₱{voucher['min_order_amount']} required"
             )
         
-        # Calculate discount
-        if voucher["discount_type"] == "percentage":
-            discount_value = order_total * (voucher["value"] / 100)
-        else:
-            discount_value = voucher["value"]
-        
+        # Return the raw voucher value - frontend will calculate the discount
         return {
             "status": "success",
             "valid": True,
-            "discount_value": discount_value,
+            "discount_value": voucher["value"],
             "discount_type": voucher["discount_type"],
             "voucher_id": str(voucher["_id"])
         }

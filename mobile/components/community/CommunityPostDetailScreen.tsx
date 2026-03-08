@@ -12,9 +12,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../contexts/AuthContext";
 import { API_BASE_URL } from "../../constants/config";
 import {
@@ -23,6 +25,8 @@ import {
   addComment,
   deleteComment,
   editComment,
+  deleteCommunityPost,
+  updateCommunityPost,
 } from "../../services/api";
 import type { CommunityPost, CommunityComment, Screen } from "../../types";
 import { ecommerceStyles as styles } from "../../styles/ecommerce";
@@ -55,6 +59,21 @@ export const CommunityPostDetailScreen: React.FC<
   const [editCommentText, setEditCommentText] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  
+  // Edit/delete post states
+  const [editPostModalVisible, setEditPostModalVisible] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [savingPost, setSavingPost] = useState(false);
+  const [deletingPost, setDeletingPost] = useState(false);
+  
+  // Image editing state
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [newImages, setNewImages] = useState<{ uri: string; type?: string; name?: string }[]>([]);
+  const [imagesToRemove, setImagesToRemove] = useState<string[]>([]);
+
+  const CATEGORIES = ["Tips", "Showcase", "Questions", "Discussion", "News"];
 
   useEffect(() => {
     loadPostDetails();
@@ -203,6 +222,131 @@ export const CommunityPostDetailScreen: React.FC<
               }
             } finally {
               setDeletingCommentId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Post edit/delete handlers
+  const handleEditPost = () => {
+    if (!post) return;
+    setEditTitle(post.title);
+    setEditDescription(post.description);
+    setEditCategory(post.category);
+    setExistingImages(post.images || []);
+    setNewImages([]);
+    setImagesToRemove([]);
+    setEditPostModalVisible(true);
+  };
+
+  const handleRemoveExistingImage = (imageUrl: string) => {
+    setImagesToRemove((prev) => [...prev, imageUrl]);
+    setExistingImages((prev) => prev.filter((url) => url !== imageUrl));
+  };
+
+  const handleRemoveNewImage = (index: number) => {
+    setNewImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePickImage = async () => {
+    const totalImages = existingImages.length + newImages.length;
+    if (totalImages >= 3) {
+      Alert.alert("Limit Reached", "Maximum 3 images allowed per post");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setNewImages((prev) => [
+        ...prev,
+        {
+          uri: asset.uri,
+          type: asset.mimeType || "image/jpeg",
+          name: `image_${Date.now()}.jpg`,
+        },
+      ]);
+    }
+  };
+
+  const handleSavePostEdit = async () => {
+    if (!post) return;
+    
+    if (!editTitle.trim()) {
+      Alert.alert("Error", "Title is required");
+      return;
+    }
+    if (!editDescription.trim()) {
+      Alert.alert("Error", "Description is required");
+      return;
+    }
+
+    setSavingPost(true);
+    try {
+      const result = await updateCommunityPost(
+        API_BASE_URL,
+        post.id,
+        editTitle.trim(),
+        editDescription.trim(),
+        editCategory,
+        newImages.length > 0 ? newImages : undefined,
+        imagesToRemove.length > 0 ? imagesToRemove : undefined
+      );
+      
+      if (result.success) {
+        const updatedImages = result.post?.images || existingImages;
+        setPost((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            title: editTitle.trim(),
+            description: editDescription.trim(),
+            category: editCategory,
+            images: updatedImages,
+          };
+        });
+        setEditPostModalVisible(false);
+        Alert.alert("Success", "Post updated successfully");
+      } else {
+        Alert.alert("Error", "Failed to update post");
+      }
+    } finally {
+      setSavingPost(false);
+    }
+  };
+
+  const handleDeletePost = () => {
+    if (!post) return;
+    
+    Alert.alert(
+      "Delete Post",
+      "Are you sure you want to delete this post? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeletingPost(true);
+            try {
+              const result = await deleteCommunityPost(API_BASE_URL, post.id);
+              if (result.success) {
+                Alert.alert("Success", "Post deleted successfully", [
+                  { text: "OK", onPress: () => onBack() }
+                ]);
+              } else {
+                Alert.alert("Error", "Failed to delete post");
+              }
+            } finally {
+              setDeletingPost(false);
             }
           },
         },
@@ -443,6 +587,58 @@ export const CommunityPostDetailScreen: React.FC<
               </Text>
             </View>
           </View>
+
+          {/* Edit/Delete buttons for post author */}
+          {user && post.author_id === user.id && (
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  backgroundColor: "#334155",
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                }}
+                onPress={handleEditPost}
+                disabled={savingPost}
+              >
+                <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                <Text style={{ color: "#3B82F6", fontWeight: "600" }}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  backgroundColor: "#FEE2E2",
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                }}
+                onPress={handleDeletePost}
+                disabled={deletingPost}
+              >
+                {deletingPost ? (
+                  <ActivityIndicator size="small" color="#EF4444" />
+                ) : (
+                  <>
+                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    <Text style={{ color: "#EF4444", fontWeight: "600" }}>Delete</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Description */}
           <Text
@@ -802,6 +998,234 @@ export const CommunityPostDetailScreen: React.FC<
           onClose={() => setGalleryVisible(false)}
         />
       )}
+
+      {/* Edit Post Modal */}
+      <Modal
+        visible={editPostModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setEditPostModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              justifyContent: "flex-end",
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: theme.colors.background,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                maxHeight: "90%",
+              }}
+            >
+              {/* Modal Header */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: 16,
+                  borderBottomWidth: 1,
+                  borderBottomColor: theme.colors.border,
+                }}
+              >
+                <TouchableOpacity onPress={() => setEditPostModalVisible(false)}>
+                  <Text style={{ color: theme.colors.textSecondary }}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={{ color: theme.colors.text, fontWeight: "bold", fontSize: 16 }}>
+                  Edit Post
+                </Text>
+                <TouchableOpacity onPress={handleSavePostEdit} disabled={savingPost}>
+                  {savingPost ? (
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                  ) : (
+                    <Text style={{ color: theme.colors.primary, fontWeight: "600" }}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ padding: 16 }}>
+                {/* Title Input */}
+                <Text style={{ color: theme.colors.text, marginBottom: 8, fontWeight: "600" }}>
+                  Title
+                </Text>
+                <TextInput
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  placeholder="Post title..."
+                  placeholderTextColor={theme.colors.textSecondary}
+                  style={{
+                    backgroundColor: "#1E293B",
+                    borderRadius: 8,
+                    padding: 12,
+                    color: theme.colors.text,
+                    marginBottom: 16,
+                  }}
+                />
+
+                {/* Category Select */}
+                <Text style={{ color: theme.colors.text, marginBottom: 8, fontWeight: "600" }}>
+                  Category
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 16 }}
+                >
+                  {CATEGORIES.map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setEditCategory(cat)}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 20,
+                        marginRight: 8,
+                        backgroundColor: editCategory === cat ? theme.colors.primary : "#1E293B",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: editCategory === cat ? "white" : theme.colors.textSecondary,
+                          fontWeight: "600",
+                        }}
+                      >
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Description Input */}
+                <Text style={{ color: theme.colors.text, marginBottom: 8, fontWeight: "600" }}>
+                  Description
+                </Text>
+                <TextInput
+                  value={editDescription}
+                  onChangeText={setEditDescription}
+                  placeholder="Write your post..."
+                  placeholderTextColor={theme.colors.textSecondary}
+                  multiline
+                  numberOfLines={6}
+                  textAlignVertical="top"
+                  style={{
+                    backgroundColor: "#1E293B",
+                    borderRadius: 8,
+                    padding: 12,
+                    color: theme.colors.text,
+                    minHeight: 150,
+                    marginBottom: 16,
+                  }}
+                />
+
+                {/* Images Section */}
+                <Text style={{ color: theme.colors.text, marginBottom: 8, fontWeight: "600" }}>
+                  Images ({existingImages.length + newImages.length}/3)
+                </Text>
+                
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 32 }}
+                  contentContainerStyle={{ gap: 12 }}
+                >
+                  {/* Existing Images */}
+                  {existingImages.map((imageUrl, index) => (
+                    <View key={`existing-${index}`} style={{ position: "relative" }}>
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={{
+                          width: 100,
+                          height: 100,
+                          borderRadius: 8,
+                          backgroundColor: "#0F172A",
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => handleRemoveExistingImage(imageUrl)}
+                        style={{
+                          position: "absolute",
+                          top: -8,
+                          right: -8,
+                          backgroundColor: "#EF4444",
+                          borderRadius: 12,
+                          width: 24,
+                          height: 24,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Ionicons name="close" size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                  {/* New Images */}
+                  {newImages.map((img, index) => (
+                    <View key={`new-${index}`} style={{ position: "relative" }}>
+                      <Image
+                        source={{ uri: img.uri }}
+                        style={{
+                          width: 100,
+                          height: 100,
+                          borderRadius: 8,
+                          backgroundColor: "#0F172A",
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => handleRemoveNewImage(index)}
+                        style={{
+                          position: "absolute",
+                          top: -8,
+                          right: -8,
+                          backgroundColor: "#EF4444",
+                          borderRadius: 12,
+                          width: 24,
+                          height: 24,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Ionicons name="close" size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                  {/* Add Image Button */}
+                  {existingImages.length + newImages.length < 3 && (
+                    <TouchableOpacity
+                      onPress={handlePickImage}
+                      style={{
+                        width: 100,
+                        height: 100,
+                        borderRadius: 8,
+                        backgroundColor: "#0F172A",
+                        borderWidth: 2,
+                        borderStyle: "dashed",
+                        borderColor: "#334155",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons name="add" size={32} color="#64748B" />
+                      <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>
+                        Add
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </ScrollView>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };

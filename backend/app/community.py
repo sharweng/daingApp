@@ -234,7 +234,7 @@ def get_posts_by_category(category: str, limit: int = 7):
 
 @router.get("/community/posts/me")
 def get_my_community_posts(page: int = 1, page_size: int = 10, user=Depends(get_current_user_web)):
-    """Get current user's community posts, including deleted/disabled status."""
+    """Get current user's community posts, excluding deleted posts."""
     page = max(page, 1)
     page_size = min(max(page_size, 1), 50)
 
@@ -243,15 +243,18 @@ def get_my_community_posts(page: int = 1, page_size: int = 10, user=Depends(get_
         return {"status": "success", "page": page, "page_size": page_size, "total": 0, "posts": []}
 
     user_id = str(user.get("_id", user.get("id", "")))
-    query = {"author_id": user_id}
+    # Exclude deleted posts from query so total count is accurate
+    query = {
+        "author_id": user_id,
+        "$or": [{"is_deleted": {"$ne": True}}, {"is_deleted": {"$exists": False}}]
+    }
 
     total = collection.count_documents(query)
     cursor = collection.find(query).sort("created_at", -1).skip((page - 1) * page_size).limit(page_size)
     posts = []
     for doc in cursor:
-        is_deleted = doc.get("is_deleted", False)
         is_disabled = doc.get("is_disabled", False)
-        status = "deleted" if is_deleted else "draft" if is_disabled else "published"
+        status = "draft" if is_disabled else "published"
         posts.append({
             "id": str(doc.get("_id")),
             "title": doc.get("title", ""),
@@ -436,9 +439,11 @@ def edit_community_post(
     title: str = Form(...),
     description: str = Form(...),
     category: str = Form("Discussion"),
+    images: List[UploadFile] = File(default=[]),
+    remove_images: str = Form(default=""),
     user=Depends(get_current_user_web),
 ):
-    """Edit own post - only the post owner can edit."""
+    """Edit own post - only the post owner can edit. Supports updating images."""
     collection = _get_community_collection()
     if collection is None:
         raise HTTPException(status_code=500, detail="Database not available")
@@ -462,12 +467,37 @@ def edit_community_post(
     censored_title = _censor_bad_words(title.strip())
     censored_description = _censor_bad_words(description.strip())
 
+    # Handle images
+    current_images = post.get("images", [])
+    
+    # Parse remove_images (comma-separated list of URLs to remove)
+    images_to_remove = [url.strip() for url in remove_images.split(",") if url.strip()]
+    
+    # Remove specified images
+    if images_to_remove:
+        current_images = [url for url in current_images if url not in images_to_remove]
+    
+    # Upload new images
+    for img in images:
+        if img.filename and len(current_images) < 3:  # Max 3 images
+            try:
+                contents = img.file.read()
+                result = cloudinary.uploader.upload(
+                    contents,
+                    folder="community-posts",
+                    resource_type="image",
+                )
+                current_images.append(result.get("secure_url"))
+            except Exception as e:
+                print(f"Failed to upload image: {e}")
+
     collection.update_one(
         {"_id": oid},
         {"$set": {
             "title": censored_title,
             "description": censored_description,
             "category": category,
+            "images": current_images,
             "updated_at": datetime.now().isoformat(),
         }}
     )
@@ -480,7 +510,56 @@ def edit_community_post(
             "title": updated.get("title", ""),
             "description": updated.get("description", ""),
             "category": updated.get("category", "Discussion"),
+            "images": updated.get("images", []),
         }
+    }
+
+
+@router.put("/community/posts/{post_id}/toggle-visibility")
+def toggle_my_post_visibility(post_id: str, user=Depends(get_current_user_web)):
+    """Toggle visibility of own post (hide/show)."""
+    collection = _get_community_collection()
+    if collection is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    try:
+        oid = ObjectId(post_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid post ID")
+
+    post = collection.find_one({"_id": oid})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    user_id = str(user.get("_id", user.get("id", "")))
+
+    # Only owner can toggle their own post visibility
+    if post.get("author_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to change visibility of this post")
+
+    is_disabled = post.get("is_disabled", False)
+    new_status = not is_disabled
+    now = datetime.now().isoformat()
+
+    update_data = {
+        "is_disabled": new_status,
+        "updated_at": now,
+    }
+
+    if new_status:
+        update_data["disable_reason"] = "Hidden by user"
+        update_data["disabled_at"] = now
+    else:
+        update_data["disable_reason"] = ""
+        update_data["enabled_at"] = now
+
+    collection.update_one({"_id": oid}, {"$set": update_data})
+
+    return {
+        "status": "success",
+        "post_id": post_id,
+        "new_status": "draft" if new_status else "published",
+        "message": f"Post {'hidden' if new_status else 'visible'} successfully",
     }
 
 

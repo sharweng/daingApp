@@ -66,13 +66,13 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
       setEditing(voucher);
       setForm({
         code: voucher.code,
-        description: voucher.description || "",
-        discountType: voucher.discountType,
-        discountValue: voucher.discountValue.toString(),
-        minPurchase: voucher.minPurchase?.toString() || "",
-        maxUses: voucher.maxUses?.toString() || "",
-        expiresAt: voucher.expiresAt || "",
-        isActive: voucher.isActive,
+        description: "",
+        discountType: voucher.discount_type,
+        discountValue: (voucher.value ?? 0).toString(),
+        minPurchase: voucher.min_order_amount?.toString() || "",
+        maxUses: voucher.max_uses?.toString() || "",
+        expiresAt: voucher.expiration_date || "",
+        isActive: voucher.active,
       });
     } else {
       setEditing(null);
@@ -145,7 +145,7 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
   };
 
   const renderVoucher = useCallback(({ item }: { item: Voucher }) => {
-    const isExpired = item.expiresAt && new Date(item.expiresAt) < new Date();
+    const isExpired = item.expiration_date && new Date(item.expiration_date) < new Date();
     return (
       <View
         style={{
@@ -158,7 +158,7 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
           shadowOpacity: 0.05,
           shadowRadius: 2,
           elevation: 1,
-          opacity: item.isActive && !isExpired ? 1 : 0.6,
+          opacity: item.active && !isExpired ? 1 : 0.6,
         }}
       >
         <View
@@ -191,7 +191,7 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
             </Text>
           </View>
           <View style={{ flexDirection: "row", gap: 4 }}>
-            {!item.isActive && (
+            {!item.active && (
               <View
                 style={{
                   backgroundColor: "#FEE2E2",
@@ -219,7 +219,7 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
         </View>
 
         <Text style={{ fontSize: 14, color: "#94A3B8", marginBottom: 8 }}>
-          {item.description || "No description"}
+          No description
         </Text>
 
         <View
@@ -235,38 +235,38 @@ export default function AdminVouchersScreen({ onNavigate, onBack }: Props) {
             <Text
               style={{ fontSize: 14, fontWeight: "bold", color: "#10B981" }}
             >
-              {item.discountType === "percentage"
-                ? `${item.discountValue}%`
-                : `₱${item.discountValue}`}
+              {item.discount_type === "percentage"
+                ? `${item.value ?? 0}%`
+                : `₱${item.value ?? 0}`}
             </Text>
           </View>
-          {item.minPurchase && (
+          {item.min_order_amount != null && item.min_order_amount > 0 && (
             <View>
               <Text style={{ fontSize: 10, color: "#94A3B8" }}>
                 Min Purchase
               </Text>
               <Text style={{ fontSize: 14, color: "#FFFFFF" }}>
-                ₱{item.minPurchase.toLocaleString()}
+                ₱{item.min_order_amount.toLocaleString()}
               </Text>
             </View>
           )}
           <View>
             <Text style={{ fontSize: 10, color: "#94A3B8" }}>Used</Text>
             <Text style={{ fontSize: 14, color: "#FFFFFF" }}>
-              {item.usedCount}
-              {item.maxUses ? `/${item.maxUses}` : ""}
+              {item.used_count ?? 0}
+              {item.max_uses ? `/${item.max_uses}` : ""}
             </Text>
           </View>
-          {item.expiresAt && (
+          {item.expiration_date && (
             <View>
               <Text style={{ fontSize: 10, color: "#94A3B8" }}>Expires</Text>
               <Text
                 style={{
                   fontSize: 14,
-                  color: isExpired ? "#EF4444" : "#1E293B",
+                  color: isExpired ? "#EF4444" : "#FFFFFF",
                 }}
               >
-                {new Date(item.expiresAt).toLocaleDateString()}
+                {new Date(item.expiration_date).toLocaleDateString()}
               </Text>
             </View>
           )}

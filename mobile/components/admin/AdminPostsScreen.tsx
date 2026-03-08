@@ -85,14 +85,18 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
   };
 
   const filteredPosts = posts.filter((p) => {
-    if (statusFilter === "all") return true;
+    if (statusFilter === "all") return p.status !== "deleted";  // Exclude deleted from "all"
     if (statusFilter === "active") return p.status === "active";
-    if (statusFilter === "hidden") return p.status !== "active";
+    if (statusFilter === "hidden") return p.status === "disabled";
+    if (statusFilter === "deleted") return p.status === "deleted";
     return true;
   });
 
   const renderPost = useCallback(
-    ({ item }: { item: AdminPost }) => (
+    ({ item }: { item: AdminPost }) => {
+      const isDeleted = item.status === "deleted";
+      
+      return (
       <View
         style={{
           backgroundColor: "#1E293B",
@@ -133,7 +137,19 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
               {item.category}
             </Text>
           </View>
-          {item.status !== "active" && (
+          {item.status === "disabled" && (
+            <View
+              style={{
+                backgroundColor: "#FEF3C7",
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 4,
+              }}
+            >
+              <Text style={{ fontSize: 10, color: "#F59E0B" }}>Hidden</Text>
+            </View>
+          )}
+          {item.status === "deleted" && (
             <View
               style={{
                 backgroundColor: "#FEE2E2",
@@ -142,7 +158,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
                 borderRadius: 4,
               }}
             >
-              <Text style={{ fontSize: 10, color: "#EF4444" }}>Hidden</Text>
+              <Text style={{ fontSize: 10, color: "#EF4444" }}>Deleted</Text>
             </View>
           )}
         </View>
@@ -170,7 +186,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           style={{
             flexDirection: "row",
             alignItems: "center",
-            marginBottom: 12,
+            marginBottom: isDeleted ? 0 : 12,
           }}
         >
           <View
@@ -202,6 +218,8 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
           </Text>
         </View>
 
+        {/* Only show action buttons for non-deleted posts */}
+        {!isDeleted && (
         <View style={{ flexDirection: "row", gap: 8 }}>
           <TouchableOpacity
             style={{
@@ -235,8 +253,10 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
             <Text style={{ color: "#EF4444", fontWeight: "600" }}>Delete</Text>
           </TouchableOpacity>
         </View>
+        )}
       </View>
-    ),
+    );
+    },
     [],
   );
 
@@ -253,7 +273,7 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
       {/* Filter Tabs */}
       <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          {(["all", "active", "hidden"] as const).map((filter) => (
+          {(["all", "active", "hidden", "deleted"] as const).map((filter) => (
             <TouchableOpacity
               key={filter}
               style={{
@@ -265,8 +285,10 @@ export default function AdminPostsScreen({ onNavigate, onBack }: Props) {
                     ? filter === "active"
                       ? "#10B981"
                       : filter === "hidden"
-                        ? "#EF4444"
-                        : "#3B82F6"
+                        ? "#F59E0B"
+                        : filter === "deleted"
+                          ? "#EF4444"
+                          : "#3B82F6"
                     : "#334155",
               }}
               onPress={() => setStatusFilter(filter)}

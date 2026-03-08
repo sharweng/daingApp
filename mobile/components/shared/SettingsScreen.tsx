@@ -170,16 +170,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={styles.sectionTitle}>ACCOUNT</Text>
             <View style={styles.menuCard}>
               <MenuItem
-                icon="receipt-outline"
-                label="My Orders"
-                subtitle="View order history and status"
-                onPress={() => onNavigate("userOrders")}
-              />
-              <MenuItem
                 icon="heart-outline"
                 label="Wishlist"
                 subtitle="Products you've saved"
                 onPress={() => onNavigate("wishlist")}
+              />
+              <MenuItem
+                icon="receipt-outline"
+                label="My Orders"
+                subtitle="View order history and status"
+                onPress={() => onNavigate("userOrders")}
               />
               <MenuItem
                 icon="document-text-outline"

@@ -16,9 +16,10 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../contexts/AuthContext";
 import { API_BASE_URL } from "../../constants/config";
-import { getMyCommunityPosts, deleteCommunityPost, updateCommunityPost } from "../../services/api";
+import { getMyCommunityPosts, deleteCommunityPost, updateCommunityPost, toggleMyPostVisibility } from "../../services/api";
 import type { MyCommunityPost, Screen } from "../../types";
 import { ecommerceStyles as styles } from "../../styles/ecommerce";
 import { theme } from "../../styles/theme";
@@ -58,8 +59,15 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("Discussion");
+  
+  // Image editing state
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [newImages, setNewImages] = useState<{ uri: string; type?: string; name?: string }[]>([]);
+  const [imagesToRemove, setImagesToRemove] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [togglingPostId, setTogglingPostId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
 
   const loadPosts = useCallback(
     async (isRefresh = false, pageNum = 1) => {
@@ -82,8 +90,11 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
         
         if (pageNum === 1) {
           setPosts(filteredPosts);
+          setHasMore(result.posts.length > 0);
         } else {
           setPosts((prev) => [...prev, ...filteredPosts]);
+          // Stop loading if no more results from API
+          setHasMore(result.posts.length > 0);
         }
         setTotal(result.total);
         setPage(pageNum);
@@ -98,12 +109,14 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
 
   useEffect(() => {
     if (isAuthenticated) {
+      setHasMore(true);
       loadPosts(false, 1);
     }
   }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated) {
+      setHasMore(true);
       loadPosts(false, 1);
     }
   }, [category]);
@@ -113,7 +126,46 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
     setEditTitle(post.title);
     setEditDescription(post.description);
     setEditCategory(post.category);
+    setExistingImages(post.images || []);
+    setNewImages([]);
+    setImagesToRemove([]);
     setEditModalVisible(true);
+  };
+
+  const handleRemoveExistingImage = (imageUrl: string) => {
+    setImagesToRemove((prev) => [...prev, imageUrl]);
+    setExistingImages((prev) => prev.filter((url) => url !== imageUrl));
+  };
+
+  const handleRemoveNewImage = (index: number) => {
+    setNewImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePickImage = async () => {
+    const totalImages = existingImages.length + newImages.length;
+    if (totalImages >= 3) {
+      Alert.alert("Limit Reached", "Maximum 3 images allowed per post");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setNewImages((prev) => [
+        ...prev,
+        {
+          uri: asset.uri,
+          type: asset.mimeType || "image/jpeg",
+          name: `image_${Date.now()}.jpg`,
+        },
+      ]);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -135,14 +187,23 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
         editingPost.id,
         editTitle.trim(),
         editDescription.trim(),
-        editCategory
+        editCategory,
+        newImages.length > 0 ? newImages : undefined,
+        imagesToRemove.length > 0 ? imagesToRemove : undefined
       );
       
       if (result.success) {
-        // Update the post in local state
+        // Update the post in local state with new images
+        const updatedImages = result.post?.images || existingImages;
         setPosts(prev => prev.map(p => 
           p.id === editingPost.id 
-            ? { ...p, title: editTitle.trim(), description: editDescription.trim(), category: editCategory }
+            ? { 
+                ...p, 
+                title: editTitle.trim(), 
+                description: editDescription.trim(), 
+                category: editCategory,
+                images: updatedImages
+              }
             : p
         ));
         setEditModalVisible(false);
@@ -183,8 +244,48 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
     );
   };
 
+  const handleToggleVisibility = async (post: MyCommunityPost) => {
+    const isCurrentlyHidden = post.status === "draft";
+    const action = isCurrentlyHidden ? "show" : "hide";
+    
+    Alert.alert(
+      isCurrentlyHidden ? "Show Post" : "Hide Post",
+      isCurrentlyHidden 
+        ? "This will make your post visible in the community feed."
+        : "This will hide your post from the community feed. You can show it again later.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: isCurrentlyHidden ? "Show" : "Hide",
+          onPress: async () => {
+            setTogglingPostId(post.id);
+            try {
+              const result = await toggleMyPostVisibility(API_BASE_URL, post.id);
+              if (result.success) {
+                // Update local state with new status
+                setPosts(prev => prev.map(p => 
+                  p.id === post.id 
+                    ? { ...p, status: result.new_status as "published" | "draft" }
+                    : p
+                ));
+                Alert.alert(
+                  "Success", 
+                  isCurrentlyHidden ? "Post is now visible" : "Post is now hidden"
+                );
+              } else {
+                Alert.alert("Error", `Failed to ${action} post`);
+              }
+            } finally {
+              setTogglingPostId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleLoadMore = () => {
-    if (!loadingMore && posts.length < total) {
+    if (!loadingMore && hasMore) {
       loadPosts(false, page + 1);
     }
   };
@@ -192,6 +293,8 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
   const renderPost = ({ item }: { item: MyCommunityPost }) => {
     const firstImage = item.images[0];
     const isDeleting = deletingPostId === item.id;
+    const isToggling = togglingPostId === item.id;
+    const isHidden = item.status === "draft";
 
     return (
       <View
@@ -200,18 +303,58 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
           borderRadius: 12,
           marginBottom: 16,
           overflow: "hidden",
-          opacity: isDeleting ? 0.5 : 1,
+          opacity: isDeleting || isToggling ? 0.5 : 1,
         }}
       >
         <TouchableOpacity
           onPress={() => onNavigate("communityPostDetail", { postId: item.id })}
         >
           {firstImage && (
-            <Image
-              source={{ uri: firstImage }}
-              style={{ width: "100%", height: 180 }}
-              resizeMode="cover"
-            />
+            <View>
+              <Image
+                source={{ uri: firstImage }}
+                style={{ width: "100%", height: 180 }}
+                resizeMode="cover"
+              />
+              {/* Hidden status overlay on image */}
+              {isHidden && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    backgroundColor: "#F59E0B",
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 4,
+                    flexDirection: "row",
+                    alignItems: "center",
+                  }}
+                >
+                  <Ionicons name="eye-off" size={12} color="#FFFFFF" />
+                  <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "600", marginLeft: 4 }}>
+                    Hidden
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+          {/* Show hidden badge if no image */}
+          {!firstImage && isHidden && (
+            <View
+              style={{
+                backgroundColor: "#F59E0B20",
+                paddingVertical: 8,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="eye-off" size={14} color="#F59E0B" />
+              <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "600", marginLeft: 6 }}>
+                This post is hidden from the community
+              </Text>
+            </View>
           )}
           <View style={{ padding: 16 }}>
             {/* Category Badge */}
@@ -296,6 +439,34 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
             <Text style={{ color: "#3B82F6", marginLeft: 8, fontWeight: "600" }}>
               Edit
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: 12,
+              borderRightWidth: 1,
+              borderRightColor: "#334155",
+            }}
+            onPress={() => handleToggleVisibility(item)}
+            disabled={isToggling}
+          >
+            {isToggling ? (
+              <ActivityIndicator size="small" color="#F59E0B" />
+            ) : (
+              <>
+                <Ionicons 
+                  name={isHidden ? "eye" : "eye-off"} 
+                  size={18} 
+                  color="#F59E0B" 
+                />
+                <Text style={{ color: "#F59E0B", marginLeft: 8, fontWeight: "600" }}>
+                  {isHidden ? "Show" : "Hide"}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
           <TouchableOpacity
             style={{
@@ -557,6 +728,103 @@ export const MyPostsScreen: React.FC<MyPostsScreenProps> = ({
                     marginBottom: 20,
                   }}
                 />
+
+                {/* Images Section */}
+                <Text style={{ fontSize: 14, color: "#94A3B8", marginBottom: 8 }}>
+                  Images ({existingImages.length + newImages.length}/3)
+                </Text>
+                
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 20 }}
+                  contentContainerStyle={{ gap: 12 }}
+                >
+                  {/* Existing Images */}
+                  {existingImages.map((imageUrl, index) => (
+                    <View key={`existing-${index}`} style={{ position: "relative" }}>
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={{
+                          width: 100,
+                          height: 100,
+                          borderRadius: 8,
+                          backgroundColor: "#0F172A",
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => handleRemoveExistingImage(imageUrl)}
+                        style={{
+                          position: "absolute",
+                          top: -8,
+                          right: -8,
+                          backgroundColor: "#EF4444",
+                          borderRadius: 12,
+                          width: 24,
+                          height: 24,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Ionicons name="close" size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                  {/* New Images */}
+                  {newImages.map((img, index) => (
+                    <View key={`new-${index}`} style={{ position: "relative" }}>
+                      <Image
+                        source={{ uri: img.uri }}
+                        style={{
+                          width: 100,
+                          height: 100,
+                          borderRadius: 8,
+                          backgroundColor: "#0F172A",
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => handleRemoveNewImage(index)}
+                        style={{
+                          position: "absolute",
+                          top: -8,
+                          right: -8,
+                          backgroundColor: "#EF4444",
+                          borderRadius: 12,
+                          width: 24,
+                          height: 24,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Ionicons name="close" size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                  {/* Add Image Button */}
+                  {existingImages.length + newImages.length < 3 && (
+                    <TouchableOpacity
+                      onPress={handlePickImage}
+                      style={{
+                        width: 100,
+                        height: 100,
+                        borderRadius: 8,
+                        backgroundColor: "#0F172A",
+                        borderWidth: 2,
+                        borderStyle: "dashed",
+                        borderColor: "#334155",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons name="add" size={32} color="#64748B" />
+                      <Text style={{ color: "#64748B", fontSize: 12, marginTop: 4 }}>
+                        Add
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
 
                 {/* Save Button */}
                 <TouchableOpacity

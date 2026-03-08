@@ -14,7 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../contexts/AuthContext";
 import { API_BASE_URL } from "../../constants/config";
-import { getCart, createOrder, validateVoucher } from "../../services/api";
+import { getCart, createOrder, validateVoucher, getUserProfile } from "../../services/api";
 import type { CartItem, OrderAddress, Screen } from "../../types";
 import { ecommerceStyles as styles } from "../../styles/ecommerce";
 
@@ -69,11 +69,25 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
     }
 
     try {
-      const result = await getCart(API_BASE_URL);
-      setItems(result.items);
+      const [cartResult, profile] = await Promise.all([
+        getCart(API_BASE_URL),
+        getUserProfile(API_BASE_URL),
+      ]);
+      setItems(cartResult.items);
 
-      // Pre-fill name if available
-      if (user?.username) {
+      // Pre-fill address from profile if available
+      if (profile) {
+        setAddress((prev) => ({
+          ...prev,
+          full_name: profile.full_name || profile.name || prev.full_name,
+          phone: profile.phone || prev.phone,
+          address_line: profile.street_address || prev.address_line,
+          city: profile.city || prev.city,
+          province: profile.province || prev.province,
+          postal_code: profile.postal_code || prev.postal_code,
+        }));
+      } else if (user?.username) {
+        // Fallback to just username if profile fetch fails
         setAddress((prev) => ({ ...prev, full_name: user.username }));
       }
     } finally {

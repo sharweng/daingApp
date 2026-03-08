@@ -65,6 +65,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+  
+  // Password visibility toggles
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -492,36 +497,72 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <View style={styles.passwordFields}>
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Current Password</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={oldPassword}
-                      onChangeText={setOldPassword}
-                      placeholder="Enter current password"
-                      placeholderTextColor="#64748B"
-                      secureTextEntry
-                    />
+                    <View style={styles.passwordInputContainer}>
+                      <TextInput
+                        style={styles.passwordInput}
+                        value={oldPassword}
+                        onChangeText={setOldPassword}
+                        placeholder="Enter current password"
+                        placeholderTextColor="#64748B"
+                        secureTextEntry={!showOldPassword}
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordToggleButton}
+                        onPress={() => setShowOldPassword(!showOldPassword)}
+                      >
+                        <Ionicons
+                          name={showOldPassword ? "eye-off-outline" : "eye-outline"}
+                          size={22}
+                          color={theme.colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>New Password</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      placeholder="Enter new password"
-                      placeholderTextColor="#64748B"
-                      secureTextEntry
-                    />
+                    <View style={styles.passwordInputContainer}>
+                      <TextInput
+                        style={styles.passwordInput}
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        placeholder="Enter new password"
+                        placeholderTextColor="#64748B"
+                        secureTextEntry={!showNewPassword}
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordToggleButton}
+                        onPress={() => setShowNewPassword(!showNewPassword)}
+                      >
+                        <Ionicons
+                          name={showNewPassword ? "eye-off-outline" : "eye-outline"}
+                          size={22}
+                          color={theme.colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Confirm New Password</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      placeholder="Confirm new password"
-                      placeholderTextColor="#64748B"
-                      secureTextEntry
-                    />
+                    <View style={styles.passwordInputContainer}>
+                      <TextInput
+                        style={styles.passwordInput}
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        placeholder="Confirm new password"
+                        placeholderTextColor="#64748B"
+                        secureTextEntry={!showConfirmPassword}
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordToggleButton}
+                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                      >
+                        <Ionicons
+                          name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                          size={22}
+                          color={theme.colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <TouchableOpacity
                     style={styles.changePasswordButton}
@@ -772,6 +813,25 @@ const styles = StyleSheet.create({
   passwordToggleText: {
     fontSize: 16,
     color: theme.colors.text,
+  },
+  passwordInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    fontSize: 14,
+    color: theme.colors.text,
+  },
+  passwordToggleButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   passwordFields: {
     marginTop: 16,

@@ -415,7 +415,7 @@ export interface MyCommunityPost {
   likes: number;
   comments_count: number;
   created_at: string;
-  status: "published" | "draft" | "deleted";
+  status: "published" | "draft";
 }
 
 export interface CommunityComment {
