@@ -49,7 +49,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     try {
       // Build Google OAuth URL
-      const redirectUri = "https://auth.expo.io/@marbe/daingapp"; // Expo redirect URI
+      // Note: Must match Expo slug exactly (case-sensitive)
+      const redirectUri = "https://auth.expo.io/@marbe/DaingApp"; // Expo redirect URI
       const scope = encodeURIComponent("openid email profile");
       const responseType = "token";
 
